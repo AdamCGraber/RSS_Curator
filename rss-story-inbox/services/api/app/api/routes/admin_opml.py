@@ -41,10 +41,6 @@ def _extract_feeds_from_opml(opml_bytes: bytes) -> Tuple[List[Dict[str, Any]], L
     # Walk the tree manually so we can capture parent folder/category
     def walk(node: ET.Element, current_category: str | None = None):
         if node.tag == "outline":
-            # Category/folder nodes often have no xmlUrl and contain child outlines.
-            node_category = node.attrib.get("title") or node.attrib.get("text")
-            node_category = html.unescape(node_category).strip() if node_category else current_category
-
             xml_url = node.attrib.get("xmlUrl") or node.attrib.get("xmlurl")
             if xml_url:
                 feed_url = xml_url.strip()
@@ -54,9 +50,14 @@ def _extract_feeds_from_opml(opml_bytes: bytes) -> Tuple[List[Dict[str, Any]], L
                             "feed_url": feed_url,
                             "name": _best_name(node.attrib),
                             "site_url": (node.attrib.get("htmlUrl") or node.attrib.get("htmlurl") or "").strip() or None,
-                            "category": node_category or None,
+                            "category": current_category or None,
                         }
                     )
+
+                node_category = current_category
+            else:
+                node_category = node.attrib.get("title") or node.attrib.get("text")
+                node_category = html.unescape(node_category).strip() if node_category else current_category
 
             # Recurse into children
             for child in list(node):
