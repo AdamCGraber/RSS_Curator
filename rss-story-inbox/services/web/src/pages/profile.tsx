@@ -10,6 +10,18 @@ export default function ProfilePage() {
   const [err, setErr] = useState("");
   const [opmlFile, setOpmlFile] = useState<File | null>(null);
   const [opmlStatus, setOpmlStatus] = useState<string>("");
+  const [opmlReport, setOpmlReport] = useState<any | null>(null);
+  const [isImporting, setIsImporting] = useState<boolean>(false);
+
+  function downloadJson(filename: string, data: any) {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   async function load() {
     setErr("");
@@ -46,15 +58,19 @@ export default function ProfilePage() {
   async function uploadOpml() {
     if (!opmlFile) return;
 
-    setOpmlStatus("Uploading OPML...");
+    setIsImporting(true);
+    setOpmlStatus("Importing OPML…");
+    setOpmlReport(null);
+
     try {
       const fd = new FormData();
       fd.append("file", opmlFile);
 
       const result = await apiPostFile("/admin/sources/import-opml", fd);
+      setOpmlReport(result);
 
       setOpmlStatus(
-        `Imported OPML. Found ${result.total_found}, added ${result.added}, skipped ${result.skipped}.`
+        `Done. Found ${result.total_found}, added ${result.added}, skipped ${result.skipped}.`
           + (result.errors?.length ? ` Errors: ${result.errors.join(" | ")}` : "")
       );
 
@@ -62,6 +78,8 @@ export default function ProfilePage() {
       await load();
     } catch (e: any) {
       setOpmlStatus(`Import failed: ${e.message || String(e)}`);
+    } finally {
+      setIsImporting(false);
     }
   }
 
@@ -120,21 +138,51 @@ export default function ProfilePage() {
 
           <h3>Bulk import (OPML)</h3>
           <p style={{ color: "#555" }}>
-            Upload an OPML export (e.g., from Feedly). The app will import each <code>xmlUrl</code> feed.
+            Upload an OPML export (e.g., Feedly). We’ll import each RSS <code>xmlUrl</code> and keep the OPML feed
+            title as the Source name.
           </p>
 
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <input
               type="file"
               accept=".opml,.xml,text/xml,application/xml"
+              disabled={isImporting}
               onChange={(e) => setOpmlFile(e.target.files?.[0] || null)}
             />
-            <button onClick={uploadOpml} disabled={!opmlFile}>
-              Import OPML
+            <button onClick={uploadOpml} disabled={!opmlFile || isImporting}>
+              {isImporting ? "Importing…" : "Import OPML"}
             </button>
+            {opmlReport && (
+              <button
+                onClick={() =>
+                  downloadJson(
+                    `opml-import-report-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`,
+                    opmlReport
+                  )
+                }
+              >
+                Download report (JSON)
+              </button>
+            )}
           </div>
 
           {opmlStatus && <p style={{ marginTop: 8 }}>{opmlStatus}</p>}
+          {opmlReport?.skipped_items?.length ? (
+            <details style={{ marginTop: 10 }}>
+              <summary>Skipped duplicates ({opmlReport.skipped_items.length})</summary>
+              <ul>
+                {opmlReport.skipped_items.slice(0, 50).map((f: any, idx: number) => (
+                  <li key={idx}>
+                    <b>{f.name}</b> — {f.feed_url}
+                    {f.category ? <span style={{ color: "#666" }}> (Folder: {f.category})</span> : null}
+                  </li>
+                ))}
+              </ul>
+              {opmlReport.skipped_items.length > 50 ? (
+                <p style={{ color: "#666" }}>Showing first 50. Download the report for the full list.</p>
+              ) : null}
+            </details>
+          ) : null}
 
           <h3 style={{ marginTop: 16 }}>Sources</h3>
           <ul>
