@@ -16,6 +16,15 @@ export async function apiPost(path: string, body?: any) {
   return res.json();
 }
 
+export async function apiPostFile(path: string, formData: FormData) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    body: formData
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function apiPut(path: string, body: any) {
   const res = await fetch(`${API_BASE}${path}`, {
     method: "PUT",
