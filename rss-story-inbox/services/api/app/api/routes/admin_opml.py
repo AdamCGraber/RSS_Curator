@@ -1,8 +1,8 @@
-from typing import List, Tuple
-from xml.etree import ElementTree as ET
-
 from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy.orm import Session
+from xml.etree import ElementTree as ET
+from typing import List, Tuple, Dict, Any
+import html
 
 from app.core.db import get_db
 from app.models.source import Source
@@ -10,31 +10,72 @@ from app.models.source import Source
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-def _extract_feed_urls_from_opml(opml_bytes: bytes) -> Tuple[List[str], List[str]]:
-    errors: List[str] = []
-    feed_urls: List[str] = []
+def _best_name(attrs: Dict[str, str]) -> str:
+    # Prefer title, then text; decode HTML entities (e.g., NYT &gt; ...)
+    raw = attrs.get("title") or attrs.get("text") or "Imported Feed"
+    return html.unescape(raw).strip() or "Imported Feed"
 
+
+def _extract_feeds_from_opml(opml_bytes: bytes) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """
+    Returns (feeds, errors)
+
+    feeds = [
+      {
+        "feed_url": "...",
+        "name": "...",
+        "site_url": "...",   # htmlUrl if present
+        "category": "..."    # parent folder text/title if present
+      },
+      ...
+    ]
+    """
+    errors: List[str] = []
     try:
         root = ET.fromstring(opml_bytes)
     except Exception as e:
         return [], [f"Failed to parse OPML XML: {e}"]
 
-    for outline in root.findall(".//outline"):
-        xml_url = outline.attrib.get("xmlUrl") or outline.attrib.get("xmlurl")
-        if not xml_url:
-            continue
-        xml_url = xml_url.strip()
-        if xml_url:
-            feed_urls.append(xml_url)
+    feeds: List[Dict[str, Any]] = []
 
-    # Deduplicate while preserving order
+    # Walk the tree manually so we can capture parent folder/category
+    def walk(node: ET.Element, current_category: str | None = None):
+        if node.tag == "outline":
+            # Category/folder nodes often have no xmlUrl and contain child outlines.
+            node_category = node.attrib.get("title") or node.attrib.get("text")
+            node_category = html.unescape(node_category).strip() if node_category else current_category
+
+            xml_url = node.attrib.get("xmlUrl") or node.attrib.get("xmlurl")
+            if xml_url:
+                feed_url = xml_url.strip()
+                if feed_url:
+                    feeds.append(
+                        {
+                            "feed_url": feed_url,
+                            "name": _best_name(node.attrib),
+                            "site_url": (node.attrib.get("htmlUrl") or node.attrib.get("htmlurl") or "").strip() or None,
+                            "category": node_category or None,
+                        }
+                    )
+
+            # Recurse into children
+            for child in list(node):
+                walk(child, node_category)
+        else:
+            for child in list(node):
+                walk(child, current_category)
+
+    walk(root, None)
+
+    # Deduplicate by feed_url while preserving order
     seen = set()
-    deduped = []
-    for u in feed_urls:
+    deduped: List[Dict[str, Any]] = []
+    for f in feeds:
+        u = f["feed_url"]
         if u in seen:
             continue
         seen.add(u)
-        deduped.append(u)
+        deduped.append(f)
 
     return deduped, errors
 
@@ -42,36 +83,43 @@ def _extract_feed_urls_from_opml(opml_bytes: bytes) -> Tuple[List[str], List[str
 @router.post("/sources/import-opml")
 def import_opml(file: UploadFile = File(...), db: Session = Depends(get_db)):
     """
-    Sync route + sync DB: FastAPI will run this in a threadpool.
-    Reads OPML bytes, extracts xmlUrl entries, inserts missing sources.
+    Sync route + sync DB: FastAPI runs this in a threadpool.
+    Parses OPML and imports RSS feeds from xmlUrl with nice names.
+    Returns a detailed report for UX + downloadable results.
     """
-    content = file.file.read()
+    content = file.file.read()  # sync read
+    feeds, errors = _extract_feeds_from_opml(content)
 
-    feed_urls, errors = _extract_feed_urls_from_opml(content)
+    feed_urls = [f["feed_url"] for f in feeds]
 
-    added = 0
-    skipped = 0
-
-    existing = {
+    # Prefetch existing in one query
+    existing_urls = {
         r[0]
         for r in db.query(Source.feed_url)
         .filter(Source.feed_url.in_(feed_urls))
         .all()
     }
 
-    for feed_url in feed_urls:
-        if feed_url in existing:
-            skipped += 1
+    added_items = []
+    skipped_items = []
+
+    for f in feeds:
+        if f["feed_url"] in existing_urls:
+            skipped_items.append(f)
             continue
-        db.add(Source(name="Imported Feed", feed_url=feed_url, active=True))
-        added += 1
+
+        # Use OPML title/text as the source name
+        db.add(Source(name=f["name"], feed_url=f["feed_url"], active=True))
+        added_items.append(f)
 
     db.commit()
 
     return {
         "ok": True,
-        "total_found": len(feed_urls),
-        "added": added,
-        "skipped": skipped,
+        "total_found": len(feeds),
+        "added": len(added_items),
+        "skipped": len(skipped_items),
         "errors": errors,
+        "added_items": added_items,
+        "skipped_items": skipped_items,
     }
