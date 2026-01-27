@@ -1,0 +1,5 @@
+a { color: #0a58ca; text-decoration: none; }
+a:hover { text-decoration: underline; }
+button { padding: 6px 10px; cursor: pointer; }
+input, textarea { padding: 6px; }
+pre { background: #fafafa; border: 1px solid #eee; padding: 10px; border-radius: 6px; }
