@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { apiGet, apiPost, apiPut } from "../lib/api";
+import { apiGet, apiPost, apiPut, apiPostFile } from "../lib/api";
 import { Profile } from "../lib/types";
 
 export default function ProfilePage() {
@@ -8,6 +8,8 @@ export default function ProfilePage() {
   const [url, setUrl] = useState("");
   const [sources, setSources] = useState<any[]>([]);
   const [err, setErr] = useState("");
+  const [opmlFile, setOpmlFile] = useState<File | null>(null);
+  const [opmlStatus, setOpmlStatus] = useState<string>("");
 
   async function load() {
     setErr("");
@@ -39,6 +41,28 @@ export default function ProfilePage() {
     await apiPost("/sources", { name, feed_url: url });
     setUrl("");
     await load();
+  }
+
+  async function uploadOpml() {
+    if (!opmlFile) return;
+
+    setOpmlStatus("Uploading OPML...");
+    try {
+      const fd = new FormData();
+      fd.append("file", opmlFile);
+
+      const result = await apiPostFile("/admin/sources/import-opml", fd);
+
+      setOpmlStatus(
+        `Imported OPML. Found ${result.total_found}, added ${result.added}, skipped ${result.skipped}.`
+          + (result.errors?.length ? ` Errors: ${result.errors.join(" | ")}` : "")
+      );
+
+      setOpmlFile(null);
+      await load();
+    } catch (e: any) {
+      setOpmlStatus(`Import failed: ${e.message || String(e)}`);
+    }
   }
 
   return (
@@ -91,6 +115,26 @@ export default function ProfilePage() {
             <input placeholder="Feed URL" style={{ flex: 1 }} value={url} onChange={(e) => setUrl(e.target.value)} />
             <button onClick={addSource}>Add</button>
           </div>
+
+          <hr style={{ margin: "18px 0" }} />
+
+          <h3>Bulk import (OPML)</h3>
+          <p style={{ color: "#555" }}>
+            Upload an OPML export (e.g., from Feedly). The app will import each <code>xmlUrl</code> feed.
+          </p>
+
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              type="file"
+              accept=".opml,.xml,text/xml,application/xml"
+              onChange={(e) => setOpmlFile(e.target.files?.[0] || null)}
+            />
+            <button onClick={uploadOpml} disabled={!opmlFile}>
+              Import OPML
+            </button>
+          </div>
+
+          {opmlStatus && <p style={{ marginTop: 8 }}>{opmlStatus}</p>}
 
           <h3 style={{ marginTop: 16 }}>Sources</h3>
           <ul>

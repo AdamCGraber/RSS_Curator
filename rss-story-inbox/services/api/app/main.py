@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes import health, sources, profile, queue, kept, shortlist, published, summaries, admin_ingest
+from app.api.routes import health, sources, profile, queue, kept, shortlist, published, summaries, admin_ingest, admin_opml
 
 app = FastAPI(title="RSS Story Inbox (MVP)")
 
@@ -21,3 +21,4 @@ app.include_router(shortlist.router)
 app.include_router(summaries.router)
 app.include_router(published.router)
 app.include_router(admin_ingest.router)
+app.include_router(admin_opml.router)
