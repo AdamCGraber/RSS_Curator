@@ -11,10 +11,6 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 def _extract_feed_urls_from_opml(opml_bytes: bytes) -> Tuple[List[str], List[str]]:
-    """
-    Returns (feed_urls, errors)
-    feed_urls are extracted from outline nodes with xmlUrl attribute.
-    """
     errors: List[str] = []
     feed_urls: List[str] = []
 
@@ -23,8 +19,6 @@ def _extract_feed_urls_from_opml(opml_bytes: bytes) -> Tuple[List[str], List[str
     except Exception as e:
         return [], [f"Failed to parse OPML XML: {e}"]
 
-    # OPML typically has <opml><body><outline ... /></body></opml>
-    # We scan all outline nodes at any depth.
     for outline in root.findall(".//outline"):
         xml_url = outline.attrib.get("xmlUrl") or outline.attrib.get("xmlurl")
         if not xml_url:
@@ -46,25 +40,30 @@ def _extract_feed_urls_from_opml(opml_bytes: bytes) -> Tuple[List[str], List[str
 
 
 @router.post("/sources/import-opml")
-async def import_opml(file: UploadFile = File(...), db: Session = Depends(get_db)):
+def import_opml(file: UploadFile = File(...), db: Session = Depends(get_db)):
     """
-    Upload an OPML file and bulk-import RSS feeds from outline xmlUrl attributes.
+    Sync route + sync DB: FastAPI will run this in a threadpool.
+    Reads OPML bytes, extracts xmlUrl entries, inserts missing sources.
     """
-    content = await file.read()
+    content = file.file.read()
+
     feed_urls, errors = _extract_feed_urls_from_opml(content)
 
     added = 0
     skipped = 0
 
+    existing = {
+        r[0]
+        for r in db.query(Source.feed_url)
+        .filter(Source.feed_url.in_(feed_urls))
+        .all()
+    }
+
     for feed_url in feed_urls:
-        exists = db.query(Source).filter(Source.feed_url == feed_url).first()
-        if exists:
+        if feed_url in existing:
             skipped += 1
             continue
-
-        # Name heuristic: prefer outline title/text if you later want, but MVP keeps it simple.
-        name = "Imported Feed"
-        db.add(Source(name=name, feed_url=feed_url, active=True))
+        db.add(Source(name="Imported Feed", feed_url=feed_url, active=True))
         added += 1
 
     db.commit()
