@@ -7,6 +7,7 @@ export default function ProfilePage() {
   const [name, setName] = useState("Example Feed");
   const [url, setUrl] = useState("");
   const [sources, setSources] = useState<any[]>([]);
+  const [selectedSourceIds, setSelectedSourceIds] = useState<number[]>([]);
   const [err, setErr] = useState("");
   const [opmlFile, setOpmlFile] = useState<File | null>(null);
   const [opmlStatus, setOpmlStatus] = useState<string>("");
@@ -52,6 +53,40 @@ export default function ProfilePage() {
     if (!url.trim()) return;
     await apiPost("/sources", { name, feed_url: url });
     setUrl("");
+    await load();
+  }
+
+  function toggleSelected(id: number) {
+    setSelectedSourceIds((prev) =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  }
+
+  function selectAll() {
+    setSelectedSourceIds(sources.map(s => s.id));
+  }
+
+  function clearSelection() {
+    setSelectedSourceIds([]);
+  }
+
+  async function removeSelected() {
+    if (selectedSourceIds.length === 0) return;
+    const ok = confirm(`Remove ${selectedSourceIds.length} feed(s)?`);
+    if (!ok) return;
+
+    await apiPost("/admin/sources/delete-bulk", { source_ids: selectedSourceIds });
+    clearSelection();
+    await load();
+  }
+
+  async function removeAll() {
+    if (sources.length === 0) return;
+    const ok = confirm(`Remove ALL ${sources.length} feed(s)? This cannot be undone.`);
+    if (!ok) return;
+
+    await apiPost("/admin/sources/delete-all");
+    clearSelection();
     await load();
   }
 
@@ -185,13 +220,36 @@ export default function ProfilePage() {
           ) : null}
 
           <h3 style={{ marginTop: 16 }}>Sources</h3>
-          <ul>
-            {sources.map(s => (
-              <li key={s.id}>
-                <b>{s.name}</b> — {s.feed_url}
-              </li>
-            ))}
-          </ul>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center" }}>
+            <button onClick={selectAll} disabled={sources.length === 0}>Select all</button>
+            <button onClick={clearSelection} disabled={selectedSourceIds.length === 0}>Clear</button>
+            <button onClick={removeSelected} disabled={selectedSourceIds.length === 0}>
+              Remove selected ({selectedSourceIds.length})
+            </button>
+            <button onClick={removeAll} disabled={sources.length === 0}>
+              Remove all ({sources.length})
+            </button>
+          </div>
+
+          {sources.length === 0 ? (
+            <p>No sources yet.</p>
+          ) : (
+            <ul style={{ listStyle: "none", paddingLeft: 0 }}>
+              {sources.map((s) => (
+                <li key={s.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "6px 0" }}>
+                  <input
+                    type="checkbox"
+                    checked={selectedSourceIds.includes(s.id)}
+                    onChange={() => toggleSelected(s.id)}
+                  />
+                  <div>
+                    <div><b>{s.name}</b></div>
+                    <div style={{ color: "#666" }}>{s.feed_url}</div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </>
       )}
     </div>
