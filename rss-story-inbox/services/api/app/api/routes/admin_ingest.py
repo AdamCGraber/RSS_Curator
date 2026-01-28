@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+from sqlalchemy.dialects.postgresql import insert
 from app.core.db import get_db
 from app.models.source import Source
 from app.models.article import Article
@@ -17,20 +18,26 @@ def ingest(db: Session = Depends(get_db)):
 
     for s in sources:
         items = fetch_feed(s.feed_url)
+        rows = []
         for it in items:
-            existing = db.query(Article).filter(Article.url == it["url"]).first()
-            if existing:
+            url = it.get("url")
+            if not url:
                 continue
-            a = Article(
-                source_id=s.id,
-                url=it["url"],
-                title=(it["title"] or "")[:512],
-                raw_excerpt=(it.get("summary") or None),
-                published_at=it.get("published_at"),
-                status="INBOX",
+            rows.append(
+                {
+                    "source_id": s.id,
+                    "url": url,
+                    "title": (it.get("title") or "")[:512],
+                    "raw_excerpt": it.get("summary") or None,
+                    "published_at": it.get("published_at"),
+                    "status": "INBOX",
+                }
             )
-            db.add(a)
-            created += 1
+        if not rows:
+            continue
+        stmt = insert(Article).values(rows).on_conflict_do_nothing(index_elements=["url"])
+        result = db.execute(stmt)
+        created += result.rowcount or 0
 
     db.commit()
 
