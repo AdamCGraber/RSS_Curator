@@ -10,6 +10,7 @@ from app.schemas.cluster import ClusterOut, ClusterArticle
 from app.services.workflow.transitions import mark_published
 from app.services.ingest.extract_content import extract_article_text
 from app.services.ai.summarizer import generate_summary
+from app.core.config import settings
 
 router = APIRouter(prefix="/shortlist", tags=["shortlist"])
 
@@ -88,13 +89,19 @@ def gen_summary(cluster_id: int, db: Session = Depends(get_db)):
     if not content:
         content = canonical.raw_excerpt or canonical.title
 
-    text = generate_summary(
-        audience=profile.audience_text,
-        tone=profile.tone_text,
-        title=canonical.title,
-        url=canonical.url,
-        content=(content or "")[:12000],
-    )
+    if not settings.openai_api_key:
+        raise HTTPException(503, "OpenAI API key missing")
+
+    try:
+        text = generate_summary(
+            audience=profile.audience_text,
+            tone=profile.tone_text,
+            title=canonical.title,
+            url=canonical.url,
+            content=(content or "")[:12000],
+        )
+    except Exception as exc:
+        raise HTTPException(502, f"Summary generation failed: {exc}") from exc
 
     s = db.query(Summary).filter(Summary.cluster_id == cluster_id).first()
     if not s:
