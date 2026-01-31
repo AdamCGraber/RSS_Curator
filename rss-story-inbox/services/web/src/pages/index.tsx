@@ -22,9 +22,12 @@ export default function QueuePage() {
     return message;
   }
 
-  async function load() {
+  async function load(options?: { clearNotice?: boolean }) {
+    const { clearNotice = false } = options ?? {};
     setErr("");
-    setNotice("");
+    if (clearNotice) {
+      setNotice("");
+    }
     try {
       const next = await apiGet("/queue/next");
       setC(next);
@@ -41,7 +44,7 @@ export default function QueuePage() {
     setNotice("");
     try {
       await apiPost(`/queue/cluster/${c.id}/action`, { action });
-      await load();
+      await load({ clearNotice: true });
     } catch (e: any) {
       setErr(parseError(e));
     }
@@ -68,7 +71,7 @@ export default function QueuePage() {
         >
           Run ingest now
         </button>
-        <button onClick={load} style={{ marginLeft: 8 }}>Refresh</button>
+        <button onClick={() => load({ clearNotice: true })} style={{ marginLeft: 8 }}>Refresh</button>
       </div>
 
       {notice && <p style={{ color: "seagreen" }}>{notice}</p>}
