@@ -14,7 +14,15 @@ export default function QueuePage() {
     try {
       const parsed = JSON.parse(message);
       if (parsed?.detail) {
-        return parsed.detail;
+        if (typeof parsed.detail === "string") {
+          return parsed.detail;
+        }
+        if (Array.isArray(parsed.detail)) {
+          return parsed.detail
+            .map((item) => item?.msg || item?.message || JSON.stringify(item))
+            .join("; ");
+        }
+        return JSON.stringify(parsed.detail);
       }
     } catch {
       // ignore JSON parse errors
