@@ -1,8 +1,12 @@
+import logging
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import health, sources, profile, queue, kept, shortlist, published, summaries, admin_ingest, admin_opml, admin_sources
 
 app = FastAPI(title="RSS Story Inbox (MVP)")
+logger = logging.getLogger("uvicorn.error")
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,3 +32,8 @@ app.include_router(published.router)
 app.include_router(admin_ingest.router)
 app.include_router(admin_opml.router)
 app.include_router(admin_sources.router)
+
+
+@app.on_event("startup")
+def log_openai_env():
+    logger.info("OPENAI_API_KEY loaded? %s", "yes" if os.getenv("OPENAI_API_KEY") else "no")
