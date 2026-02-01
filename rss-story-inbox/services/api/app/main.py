@@ -36,5 +36,4 @@ app.include_router(admin_sources.router)
 
 @app.on_event("startup")
 def log_openai_env():
-    k = os.getenv("OPENAI_API_KEY", "")
-    logger.info("OPENAI_API_KEY loaded? len=%s suffix=%s", len(k), k[-4:] if k else "NONE")
+    logger.info("OPENAI_API_KEY loaded? %s", "yes" if os.getenv("OPENAI_API_KEY") else "no")
