@@ -18,4 +18,4 @@ class Article(Base):
 
     status: Mapped[str] = mapped_column(String(32), default="INBOX", index=True)
     cluster_id: Mapped[int] = mapped_column(ForeignKey("clusters.id"), nullable=True, index=True)
-    cluster = relationship("Cluster")
+    cluster = relationship("Cluster", foreign_keys=[cluster_id], back_populates="articles")
