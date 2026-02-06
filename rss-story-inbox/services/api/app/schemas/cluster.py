@@ -2,12 +2,15 @@ from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional, List
 
+
 class ClusterArticle(BaseModel):
     id: int
     title: str
     url: str
     source_name: str
     published_at: Optional[datetime] = None
+    match_confidence: Optional[float] = None
+
 
 class ClusterOut(BaseModel):
     id: int

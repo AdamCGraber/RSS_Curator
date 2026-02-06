@@ -11,6 +11,7 @@ from app.services.workflow.transitions import mark_published
 from app.services.ingest.extract_content import extract_article_text
 from app.services.ai.summarizer import generate_summary
 from app.core.config import settings
+from app.services.cluster.clusterer import similarity_score
 
 router = APIRouter(prefix="/shortlist", tags=["shortlist"])
 
@@ -21,6 +22,7 @@ def cluster_out(db: Session, c: Cluster) -> ClusterOut:
         .order_by(Article.published_at.desc().nullslast())
         .all()
     )
+    canonical_member = next((m for m in members if m.id == c.canonical_article_id), members[0] if members else None)
     coverage = [
         ClusterArticle(
             id=a.id,
@@ -28,10 +30,11 @@ def cluster_out(db: Session, c: Cluster) -> ClusterOut:
             url=a.url,
             source_name=a.source.name if a.source else "Unknown",
             published_at=a.published_at,
+            match_confidence=similarity_score(canonical_member.title, a.title) if canonical_member else None,
         )
         for a in members[:15]
     ]
-    canonical = coverage[0] if coverage else None
+    canonical = next((item for item in coverage if canonical_member and item.id == canonical_member.id), coverage[0] if coverage else None)
     why = "Shortlisted story"
     return ClusterOut(
         id=c.id,

@@ -4,6 +4,7 @@ export type ClusterArticle = {
   url: string;
   source_name: string;
   published_at?: string;
+  match_confidence?: number;
 };
 
 export type Cluster = {

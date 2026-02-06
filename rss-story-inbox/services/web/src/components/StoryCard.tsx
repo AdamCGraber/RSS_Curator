@@ -1,6 +1,11 @@
 import { Cluster } from "../lib/types";
 
 export default function StoryCard({ c }: { c: Cluster }) {
+  const formatConfidence = (value?: number) => {
+    if (value === undefined || value === null) return null;
+    return `${Math.round(value * 100)}%`;
+  };
+
   return (
     <div style={{ border: "1px solid #ddd", borderRadius: 8, padding: 12 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
@@ -21,12 +26,17 @@ export default function StoryCard({ c }: { c: Cluster }) {
       )}
 
       <div style={{ marginTop: 8 }}>
-        <b>More coverage</b>
+        <b>Coverage</b>
         <ul>
           {c.coverage.slice(0, 10).map(a => (
             <li key={a.id}>
-              <a href={a.url} target="_blank">{a.title}</a>{" "}
-              <span style={{ color: "#666" }}>— {a.source_name}</span>
+              <span style={{ color: "#666" }}>{a.source_name}</span> — <a href={a.url} target="_blank">{a.title}</a>
+              {a.match_confidence !== undefined && (
+                <span style={{ color: "#666" }}> ({formatConfidence(a.match_confidence)})</span>
+              )}
+              {a.published_at && (
+                <span style={{ color: "#888" }}> · {new Date(a.published_at).toLocaleString()}</span>
+              )}
             </li>
           ))}
         </ul>
