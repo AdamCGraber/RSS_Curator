@@ -26,17 +26,23 @@ class IngestRequest(BaseModel):
 
 
 def ensure_preferences(db: Session) -> UserPreference:
-    prefs = db.query(UserPreference).filter(UserPreference.user_id == 1).first()
-    if prefs:
-        return prefs
-    prefs = UserPreference(
-        user_id=1,
-        cluster_similarity_threshold=0.88,
-        cluster_time_window_days=max(1, int(settings.cluster_time_window_hours / 24) or 2),
+    default_window_days = max(1, int(settings.cluster_time_window_hours / 24) or 2)
+
+    stmt = (
+        insert(UserPreference)
+        .values(
+            user_id=1,
+            cluster_similarity_threshold=0.88,
+            cluster_time_window_days=default_window_days,
+        )
+        .on_conflict_do_nothing(index_elements=["user_id"])
     )
-    db.add(prefs)
+    db.execute(stmt)
     db.commit()
-    db.refresh(prefs)
+
+    prefs = db.query(UserPreference).filter(UserPreference.user_id == 1).first()
+    if not prefs:
+        raise HTTPException(status_code=500, detail="Failed to initialize ingest preferences")
     return prefs
 
 
