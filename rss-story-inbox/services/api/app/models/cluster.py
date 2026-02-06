@@ -15,5 +15,15 @@ class Cluster(Base):
     coverage_count: Mapped[int] = mapped_column(Integer, default=1)
     latest_published_at: Mapped[object] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     score: Mapped[float] = mapped_column(Float, default=0.0, index=True)
-    articles = relationship("Article", foreign_keys="Article.cluster_id", back_populates="cluster")
+    canonical_article: Mapped["Article | None"] = relationship(
+        "Article",
+        foreign_keys=[canonical_article_id],
+        post_update=True,
+    )
+
+    articles: Mapped[list["Article"]] = relationship(
+        "Article",
+        foreign_keys="Article.cluster_id",
+        back_populates="cluster",
+    )
 
