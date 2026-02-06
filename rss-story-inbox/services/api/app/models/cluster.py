@@ -1,5 +1,5 @@
 from sqlalchemy import String, DateTime, func, Integer, Float, ForeignKey
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 
 
@@ -15,3 +15,5 @@ class Cluster(Base):
     coverage_count: Mapped[int] = mapped_column(Integer, default=1)
     latest_published_at: Mapped[object] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     score: Mapped[float] = mapped_column(Float, default=0.0, index=True)
+    articles = relationship("Article", foreign_keys="Article.cluster_id", back_populates="cluster")
+
