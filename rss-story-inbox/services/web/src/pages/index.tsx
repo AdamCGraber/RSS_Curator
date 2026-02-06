@@ -8,6 +8,8 @@ export default function QueuePage() {
   const [c, setC] = useState<Cluster | null>(null);
   const [err, setErr] = useState<string>("");
   const [notice, setNotice] = useState<string>("");
+  const [thresholdPct, setThresholdPct] = useState<number>(88);
+  const [timeWindowDays, setTimeWindowDays] = useState<number>(2);
 
   function parseError(e: any) {
     const message = e?.message || String(e);
@@ -44,7 +46,20 @@ export default function QueuePage() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  async function loadIngestSettings() {
+    try {
+      const settings = await apiGet("/admin/ingest/settings");
+      setThresholdPct(Math.round((settings.cluster_similarity_threshold ?? 0.88) * 100));
+      setTimeWindowDays(settings.cluster_time_window_days ?? 2);
+    } catch {
+      // ignore and use defaults
+    }
+  }
+
+  useEffect(() => {
+    load();
+    loadIngestSettings();
+  }, []);
 
   async function act(action: "keep" | "reject" | "defer") {
     if (!c) return;
@@ -63,21 +78,58 @@ export default function QueuePage() {
       <h1 style={{ marginTop: 0 }}>Queue</h1>
       <p>Review one story at a time. Keep / Reject / Defer.</p>
 
-      <div style={{ marginBottom: 12 }}>
+      <div style={{ marginBottom: 12, border: "1px solid #ddd", borderRadius: 8, padding: 12 }}>
+        <h3 style={{ marginTop: 0 }}>Ingestion configuration</h3>
+        <label>
+          <b>Story similarity threshold</b> ({thresholdPct}%)
+        </label>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          value={thresholdPct}
+          onChange={(e) => setThresholdPct(Number(e.target.value))}
+          style={{ width: "100%", marginTop: 6 }}
+        />
+        <p style={{ marginTop: 4, color: "#555" }}>
+          Higher values create fewer, tighter clusters. Lower values group more loosely related stories.
+        </p>
+
+        <label htmlFor="window-days"><b>Story time window (days)</b></label>
+        <input
+          id="window-days"
+          type="number"
+          min={1}
+          max={30}
+          value={timeWindowDays}
+          onChange={(e) => setTimeWindowDays(Number(e.target.value))}
+          style={{ marginLeft: 8, width: 80 }}
+        />
+        <p style={{ marginTop: 4, color: "#555" }}>
+          Only articles published within this window will be compared as the same story.
+        </p>
+
         <button
           onClick={async () => {
             setErr("");
             setNotice("");
             try {
-              const result = await apiPost("/admin/ingest");
-              setNotice(`Ingest complete: ${result.inserted} inserted, ${result.skipped} skipped.`);
+              const result = await apiPost("/admin/ingest", {
+                cluster_similarity_threshold: thresholdPct / 100,
+                cluster_time_window_days: timeWindowDays,
+              });
+              setNotice(
+                `Ingest complete: ${result.inserted} inserted, ${result.skipped} skipped. Threshold ${Math.round(
+                  result.cluster_similarity_threshold * 100
+                )}%, window ${result.cluster_time_window_days} day(s).`
+              );
               await load();
             } catch (e: any) {
               setErr(parseError(e));
             }
           }}
         >
-          Run ingest now
+          Start ingestion
         </button>
         <button onClick={() => load({ clearNotice: true })} style={{ marginLeft: 8 }}>Refresh</button>
       </div>
