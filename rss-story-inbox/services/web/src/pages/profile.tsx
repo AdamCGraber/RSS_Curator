@@ -85,7 +85,27 @@ export default function ProfilePage() {
     const ok = confirm(`Remove ALL ${sources.length} feed(s)? This cannot be undone.`);
     if (!ok) return;
 
-    await apiPost("/admin/sources/delete-all");
+    try {
+      const res = await fetch("/api/admin/sources/delete-all", { method: "POST" });
+      if (!res.ok) {
+        const bodyText = await res.text();
+        let message = bodyText || `Request failed with status ${res.status}`;
+        try {
+          const parsed = JSON.parse(bodyText);
+          if (parsed?.error) {
+            message = parsed.detail ? `${parsed.error}: ${parsed.detail}` : parsed.error;
+          }
+        } catch (parseError) {
+          // Keep message as text if JSON parsing fails.
+        }
+        setErr(message);
+        return;
+      }
+    } catch (e: any) {
+      setErr("App server unreachable");
+      return;
+    }
+
     clearSelection();
     await load();
   }
