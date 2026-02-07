@@ -132,6 +132,8 @@ Start the app:
 docker compose up --build
 ```
 
+For local web proxy configuration, copy `services/web/.env.example` to `services/web/.env.local` and adjust as needed.
+
 ---
 
 ### Accessing the App
