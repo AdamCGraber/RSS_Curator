@@ -47,6 +47,8 @@ services:
       - ./.env
     environment:
       NEXT_PUBLIC_API_BASE: http://localhost:8000
+      BACKEND_URL: http://api:8000
+      ENABLE_ADMIN_ACTIONS: "true"
     ports:
       - "3000:3000"
     depends_on:
