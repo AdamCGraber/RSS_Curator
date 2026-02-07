@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy import delete
+from sqlalchemy import delete, update
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.models.article import Article
+from app.models.cluster import Cluster
 from app.models.source import Source
 from app.schemas.source_admin import BulkDeleteSources
 
@@ -24,6 +25,9 @@ def delete_sources_bulk(payload: BulkDeleteSources, db: Session = Depends(get_db
 
 @router.post("/delete-all")
 def delete_sources_all(db: Session = Depends(get_db)):
+    db.execute(update(Article).values(cluster_id=None))
+    db.execute(update(Cluster).values(canonical_article_id=None))
+    db.execute(delete(Cluster))
     db.execute(delete(Article))
     result = db.execute(delete(Source))
     db.commit()
