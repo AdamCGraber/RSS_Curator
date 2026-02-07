@@ -4,13 +4,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert
 from app.core.db import get_db
-from app.models.source import Source
 from app.models.article import Article
 from app.models.user_preference import UserPreference
 from app.core.config import settings
 from app.services.ingest.fetch_rss import fetch_feed
 from app.services.cluster.clusterer import cluster_recent
 from app.services.rank.scorer import score_clusters
+from app.services.sources_state import get_active_sources_snapshot
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -65,13 +65,14 @@ def ingest(payload: IngestRequest | None = None, db: Session = Depends(get_db)):
     prefs.cluster_time_window_days = window_days
     db.commit()
 
-    sources = db.query(Source).filter(Source.active == True).all()
+    snapshot = get_active_sources_snapshot(db)
+    sources = snapshot.get("sources", [])
     inserted = 0
     attempted = 0
 
     try:
         for s in sources:
-            items = fetch_feed(s.feed_url)
+            items = fetch_feed(s["feed_url"])
             rows = []
             for it in items:
                 url = it.get("url")
@@ -79,7 +80,7 @@ def ingest(payload: IngestRequest | None = None, db: Session = Depends(get_db)):
                     continue
                 rows.append(
                     {
-                        "source_id": s.id,
+                        "source_id": s["id"],
                         "url": url,
                         "title": (it.get("title") or "")[:512],
                         "raw_excerpt": it.get("summary") or None,
