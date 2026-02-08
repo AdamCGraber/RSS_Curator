@@ -3,6 +3,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.source import Source
@@ -16,9 +18,13 @@ CACHE_TTL = timedelta(minutes=20)
 def _ensure_sources_version(db: Session) -> SourcesVersion:
     row = db.get(SourcesVersion, 1)
     if row is None:
-        row = SourcesVersion(id=1, version=0)
-        db.add(row)
-        db.flush()
+        try:
+            stmt = insert(SourcesVersion).values(id=1, version=0).on_conflict_do_nothing(index_elements=["id"])
+            db.execute(stmt)
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+        row = db.get(SourcesVersion, 1)
     return row
 
 
