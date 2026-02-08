@@ -62,15 +62,19 @@ def refresh_sources_cache(db: Session, version: int) -> dict:
         ],
     }
 
-    cache = db.get(SourcesCache, 1)
-    if cache is None:
-        cache = SourcesCache(id=1, version=version, generated_at=now, payload=payload)
-        db.add(cache)
-    else:
-        cache.version = version
-        cache.generated_at = now
-        cache.payload = payload
-
+    stmt = (
+        insert(SourcesCache)
+        .values(id=1, version=version, generated_at=now, payload=payload)
+        .on_conflict_do_update(
+            index_elements=["id"],
+            set_={
+                "version": version,
+                "generated_at": now,
+                "payload": payload,
+            },
+        )
+    )
+    db.execute(stmt)
     db.flush()
     return payload
 
