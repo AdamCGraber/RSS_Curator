@@ -94,4 +94,5 @@ def publish_sources_changed(db: Session, version: int) -> None:
         db.execute(text("NOTIFY sources_changed, :payload"), {"payload": payload})
         db.commit()
     except Exception:
+        db.rollback()
         logger.exception("Failed to publish sources.changed event for version %s", version)
