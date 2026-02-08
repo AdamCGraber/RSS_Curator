@@ -6,6 +6,7 @@ import html
 
 from app.core.db import get_db
 from app.models.source import Source
+from app.services.sources_state import bump_sources_version, publish_sources_changed, refresh_sources_cache
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -104,16 +105,23 @@ def import_opml(file: UploadFile = File(...), db: Session = Depends(get_db)):
     added_items = []
     skipped_items = []
 
-    for f in feeds:
-        if f["feed_url"] in existing_urls:
-            skipped_items.append(f)
-            continue
+    with db.begin():
+        for f in feeds:
+            if f["feed_url"] in existing_urls:
+                skipped_items.append(f)
+                continue
 
-        # Use OPML title/text as the source name
-        db.add(Source(name=f["name"], feed_url=f["feed_url"], active=True))
-        added_items.append(f)
+            # Use OPML title/text as the source name
+            db.add(Source(name=f["name"], feed_url=f["feed_url"], active=True))
+            added_items.append(f)
 
-    db.commit()
+        version = None
+        if added_items:
+            version = bump_sources_version(db)
+            refresh_sources_cache(db, version)
+
+    if version is not None:
+        publish_sources_changed(db, version)
 
     return {
         "ok": True,
@@ -121,6 +129,7 @@ def import_opml(file: UploadFile = File(...), db: Session = Depends(get_db)):
         "added": len(added_items),
         "skipped": len(skipped_items),
         "errors": errors,
+        "version": version,
         "added_items": added_items,
         "skipped_items": skipped_items,
     }
