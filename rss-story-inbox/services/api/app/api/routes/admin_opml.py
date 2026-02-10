@@ -83,13 +83,13 @@ def _extract_feeds_from_opml(opml_bytes: bytes) -> Tuple[List[Dict[str, Any]], L
 
 
 @router.post("/sources/import-opml")
-async def import_opml(file: UploadFile = File(...), db: Session = Depends(get_db)):
+def import_opml(file: UploadFile = File(...), db: Session = Depends(get_db)):
     """
     Sync route + sync DB: FastAPI runs this in a threadpool.
     Parses OPML and imports RSS feeds from xmlUrl with nice names.
     Returns a detailed report for UX + downloadable results.
     """
-    content = await file.read()
+    content = file.file.read()  # sync read; keeps handler threadpooled
     feeds, errors = _extract_feeds_from_opml(content)
 
     feed_urls = [f["feed_url"] for f in feeds]
