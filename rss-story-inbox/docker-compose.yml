@@ -19,11 +19,11 @@ services:
       DATABASE_URL: postgresql+psycopg://rss:rss@db:5432/rss
       PYTHONPATH: /app
     ports:
-      - "8000:8000"
+      - "8001:8000"
     depends_on:
       - db
     command: >
-      bash -lc "alembic upgrade head &&
+      bash -lc "alembic upgrade heads &&
                 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
   worker:
@@ -46,7 +46,7 @@ services:
     env_file:
       - ./.env
     environment:
-      NEXT_PUBLIC_API_BASE: http://localhost:8000
+      NEXT_PUBLIC_API_BASE: http://localhost:8001
       BACKEND_URL: http://api:8000
       ENABLE_ADMIN_ACTIONS: "true"
     ports:
