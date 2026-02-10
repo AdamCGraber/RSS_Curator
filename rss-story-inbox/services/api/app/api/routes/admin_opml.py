@@ -84,42 +84,37 @@ def _extract_feeds_from_opml(opml_bytes: bytes) -> Tuple[List[Dict[str, Any]], L
 
 @router.post("/sources/import-opml")
 def import_opml(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    """
-    Sync route + sync DB: FastAPI runs this in a threadpool.
-    Parses OPML and imports RSS feeds from xmlUrl with nice names.
-    Returns a detailed report for UX + downloadable results.
-    """
-    content = file.file.read()  # sync read; keeps handler threadpooled
+    content = file.file.read()
     feeds, errors = _extract_feeds_from_opml(content)
 
     feed_urls = [f["feed_url"] for f in feeds]
 
-    # Prefetch existing in one query
-    existing_urls = {
-        r[0]
-        for r in db.query(Source.feed_url)
-        .filter(Source.feed_url.in_(feed_urls))
-        .all()
-    }
-
     added_items = []
     skipped_items = []
+    version = None
 
     with db.begin():
+        # Prefetch existing in one query (now inside the transaction)
+        existing_urls = {
+            r[0]
+            for r in db.query(Source.feed_url)
+            .filter(Source.feed_url.in_(feed_urls))
+            .all()
+        }
+
         for f in feeds:
             if f["feed_url"] in existing_urls:
                 skipped_items.append(f)
                 continue
 
-            # Use OPML title/text as the source name
             db.add(Source(name=f["name"], feed_url=f["feed_url"], active=True))
             added_items.append(f)
 
-        version = None
         if added_items:
             version = bump_sources_version(db)
             refresh_sources_cache(db, version)
 
+    # Outside the transaction: publish after commit
     if version is not None:
         publish_sources_changed(db, version)
 
