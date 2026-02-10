@@ -224,17 +224,12 @@ export default function QueuePage() {
     const clickTime = Date.now();
     console.info("ingestion_start_clicked", { at: new Date(clickTime).toISOString() });
 
+    let start: { job_id: string; already_running?: boolean };
     try {
-      const start = await apiPost("/admin/ingest", {
+      start = await apiPost("/admin/ingest", {
         cluster_similarity_threshold: thresholdPct / 100,
         cluster_time_window_days: timeWindowDays,
       });
-      const status = await apiGet(`/admin/ingest/status/${start.job_id}`);
-      setIngestionJob(status);
-      console.info("ingestion_job_started", { job_id: status.job_id, already_running: start.already_running });
-      if (start.already_running) {
-        setNotice("Ingestion already running. Showing current job status.");
-      }
     } catch (e: any) {
       const message = parseError(e);
       setIngestionJob({
@@ -246,6 +241,30 @@ export default function QueuePage() {
         message: "Ingestion failed.",
       });
       setIngestionModalOpen(true);
+      return;
+    }
+
+    setIngestionJob({
+      job_id: start.job_id,
+      status: "running",
+      started_at: new Date().toISOString(),
+      message: "Ingestion running…",
+    });
+
+    if (start.already_running) {
+      setNotice("Ingestion already running. Showing current job status.");
+    }
+
+    try {
+      const status = await apiGet(`/admin/ingest/status/${start.job_id}`);
+      setIngestionJob(status);
+      console.info("ingestion_job_started", { job_id: status.job_id, already_running: start.already_running });
+    } catch (e: any) {
+      console.warn("ingestion_status_initial_fetch_failed", {
+        job_id: start.job_id,
+        error: parseError(e),
+      });
+      console.info("ingestion_job_started", { job_id: start.job_id, already_running: start.already_running });
     }
   }
 
