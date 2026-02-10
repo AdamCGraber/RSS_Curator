@@ -162,7 +162,24 @@ export default function QueuePage() {
 
         const delayMs = polls <= 10 ? 1000 : 2500;
         timeoutId = window.setTimeout(poll, delayMs);
-      } catch {
+      } catch (e: any) {
+        const message = parseError(e);
+        const terminalStatusError = message.includes("Ingestion job not found") || message.includes("status 404");
+
+        if (terminalStatusError) {
+          setIngestionJob((prev) => ({
+            job_id: prev?.job_id || ingestionJob.job_id,
+            status: "failed",
+            started_at: prev?.started_at || new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            error: "Ingestion status is no longer available (job not found). Please retry ingestion.",
+            message: "Ingestion failed.",
+          }));
+          setIngestionModalOpen(true);
+          console.info("ingestion_failed", { job_id: ingestionJob.job_id, error: message });
+          return;
+        }
+
         if (!canceled) {
           timeoutId = window.setTimeout(poll, 3000);
         }
