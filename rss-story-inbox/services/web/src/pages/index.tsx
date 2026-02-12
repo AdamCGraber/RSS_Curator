@@ -106,7 +106,7 @@ export default function QueuePage() {
   }, []);
 
   useEffect(() => {
-    if (!ingestionJob) {
+    if (!ingestionJob || !running) {
       startTimestampRef.current = null;
       setElapsedSeconds(0);
       return;
@@ -127,7 +127,7 @@ export default function QueuePage() {
     update();
     const timer = window.setInterval(update, 1000);
     return () => window.clearInterval(timer);
-  }, [ingestionJob?.job_id, ingestionJob?.started_at]);
+  }, [ingestionJob?.job_id, ingestionJob?.started_at, running]);
 
   useEffect(() => {
     if (!running || !ingestionJob?.job_id) {
