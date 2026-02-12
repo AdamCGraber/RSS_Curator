@@ -216,6 +216,7 @@ export default function QueuePage() {
 
   async function retryIngestion() {
     console.info("ingestion_retry_clicked", { at: new Date().toISOString() });
+    // Backend starts ingestion asynchronously and returns a job handle we must poll.
     await startIngestion();
   }
 
