@@ -223,8 +223,8 @@ export default function QueuePage() {
 
   async function retryIngestion() {
     console.info("ingestion_retry_clicked", { at: new Date().toISOString() });
-    // Backend starts ingestion asynchronously and returns a job handle we must poll.
-    await startIngestion();
+    // Backend start endpoint only returns a running job handle; completion comes from status polling.
+    let start: { job_id: string; status: "running"; already_running?: boolean };
   }
 
   const runningMessage =
