@@ -61,6 +61,22 @@ export default function QueuePage() {
     return message;
   }
 
+  async function handleTerminalIngestionStatus(status: IngestionJob) {
+    if (status.status === "completed") {
+      console.info("ingestion_completed", { job_id: status.job_id, completed_at: status.completed_at });
+      setNotice(
+        `Ingestion complete: ${status.inserted ?? 0} inserted, ${status.skipped ?? 0} skipped. Refreshing queue...`
+      );
+      await load({ clearNotice: false });
+      return;
+    }
+
+    if (status.status === "failed") {
+      console.info("ingestion_failed", { job_id: status.job_id, error: status.error });
+      setIngestionModalOpen(true);
+    }
+  }
+
   async function load(options?: { clearNotice?: boolean }) {
     const { clearNotice = false } = options ?? {};
     setErr("");
@@ -121,18 +137,8 @@ export default function QueuePage() {
   }, [ingestionJob?.job_id, ingestionJob?.started_at, running]);
 
   useEffect(() => {
-    if (!ingestionModalOpen) {
-      return;
-    }
-
-    const root = modalRef.current;
-    const selector = "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])";
-    const focusables = root ? Array.from(root.querySelectorAll<HTMLElement>(selector)) : [];
-    focusables[0]?.focus();
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Tab" || focusables.length === 0) {
-        return;
+        if (latest.status !== "running") {
+          await handleTerminalIngestionStatus(latest);
       }
       const currentIndex = focusables.indexOf(document.activeElement as HTMLElement);
       const nextIndex = event.shiftKey
@@ -251,6 +257,9 @@ export default function QueuePage() {
             onClick={() => setIngestionModalOpen(true)}
             style={{ textDecoration: "underline", background: "transparent", border: "none", cursor: "pointer" }}
           >
+      if (status.status !== "running") {
+        await handleTerminalIngestionStatus(status);
+      }
             View status
           </button>
         </div>
