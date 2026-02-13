@@ -224,15 +224,15 @@ export default function QueuePage() {
   async function retryIngestion() {
     console.info("ingestion_retry_clicked", { at: new Date().toISOString() });
     // Backend start endpoint only returns a running job handle; completion comes from status polling.
-    let start: { job_id: string; status: "running"; already_running?: boolean };
-  }
+    let jobStart: { job_id: string; status: "running"; already_running?: boolean };
+      jobStart = await apiPost("/admin/ingest", {
 
-  const runningMessage =
-    elapsedSeconds >= STALLED_SECONDS
-      ? "Still working… this is taking longer than usual. You can run in background and continue reviewing the Queue."
-      : "We’re fetching and processing new items. This can take a minute.";
-
-  return (
+      job_id: jobStart.job_id,
+    if (jobStart.already_running) {
+      const status = await apiGet(`/admin/ingest/status/${jobStart.job_id}`);
+      console.info("ingestion_job_started", { job_id: status.job_id, already_running: jobStart.already_running });
+        job_id: jobStart.job_id,
+      console.info("ingestion_job_started", { job_id: jobStart.job_id, already_running: jobStart.already_running });
     <div>
       <h1 style={{ marginTop: 0 }}>Queue</h1>
       <p>Review one story at a time. Keep / Reject / Defer.</p>
