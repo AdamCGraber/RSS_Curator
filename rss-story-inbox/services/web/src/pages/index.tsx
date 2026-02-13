@@ -101,14 +101,15 @@ export default function QueuePage() {
     }
   }
 
-  async function syncCurrentIngestionStatus() {
-    // Backend ingestion is synchronous right now, so there is no "current job" endpoint.
-    return;
-  }
+    if (!ingestionJob || ingestionJob.status !== "running") {
+    const updateElapsed = () => {
+      const startedAtMs = startTimestampRef.current;
+      if (!startedAtMs) {
+      const seconds = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
 
-  useEffect(() => {
-    load();
-    loadIngestSettings();
+    updateElapsed();
+    const timer = window.setInterval(updateElapsed, 1000);
+  }, [ingestionJob]);
     syncCurrentIngestionStatus();
   }, []);
 
