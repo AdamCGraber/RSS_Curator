@@ -276,6 +276,16 @@ export default function QueuePage() {
           min={0}
           max={100}
           value={thresholdPct}
+
+  async function handleRefreshQueueFromModal() {
+    await load({ clearNotice: false });
+    setIngestionModalOpen(false);
+  }
+
+  function handleCopyErrorDetails() {
+    navigator.clipboard?.writeText(JSON.stringify(ingestionJob, null, 2));
+  }
+
           onChange={(e) => setThresholdPct(Number(e.target.value))}
           style={{ width: "100%", marginTop: 6 }}
         />
@@ -419,3 +429,5 @@ export default function QueuePage() {
     </div>
   );
 }
+                  <button onClick={handleRefreshQueueFromModal}>Refresh Queue</button>
+                  <button style={{ marginLeft: 8 }} onClick={handleCopyErrorDetails}>
