@@ -159,50 +159,44 @@ export default function QueuePage() {
     setNotice("");
     setIngestionModalOpen(true);
 
-    const startedAt = new Date().toISOString();
-    setIngestionJob({
-      job_id: "sync-ingest",
-      status: "running",
-      started_at: startedAt,
-      message: "Ingestion running…",
-    });
-
+    let jobStart: IngestionJobStartResponse;
     try {
-      const result = await apiPost("/admin/ingest", {
+      jobStart = await apiPost("/admin/ingest", {
         cluster_similarity_threshold: thresholdPct / 100,
         cluster_time_window_days: timeWindowDays,
       });
-
-      const completedAt = new Date().toISOString();
-      setIngestionJob({
-        job_id: "sync-ingest",
-        status: "completed",
-        started_at: startedAt,
-        completed_at: completedAt,
-        inserted: result.inserted ?? 0,
-        skipped: result.skipped ?? 0,
-        cluster_similarity_threshold: result.cluster_similarity_threshold ?? thresholdPct / 100,
-        cluster_time_window_days: result.cluster_time_window_days ?? timeWindowDays,
-        message: "Ingestion complete.",
-      });
-
-      setNotice(
-        `Ingestion complete: ${result.inserted ?? 0} inserted, ${result.skipped ?? 0} skipped. Refreshing queue...`
-      );
-      await load({ clearNotice: false });
     } catch (e: any) {
       const message = parseError(e);
       const completedAt = new Date().toISOString();
       setIngestionJob({
         job_id: "sync-ingest",
         status: "failed",
-        started_at: startedAt,
+        started_at: completedAt,
         completed_at: completedAt,
         error: message,
         message: "Ingestion failed.",
       });
       setIngestionModalOpen(true);
+      return;
     }
+
+    if (jobStart.status !== "running" || !jobStart.job_id) {
+      setErr("Ingestion start returned an invalid response.");
+      return;
+    }
+
+    const startedAt = new Date().toISOString();
+    setIngestionJob({
+      job_id: jobStart.job_id,
+      status: "running",
+      started_at: startedAt,
+      message: "Ingestion running…",
+    });
+
+    void syncCurrentIngestionStatus({
+      jobId: jobStart.job_id,
+      openModalWhenRunning: true,
+    });
   }
 
   async function retryIngestion() {
@@ -235,7 +229,10 @@ export default function QueuePage() {
     });
 
     if (jobStart.already_running) {
-      void syncCurrentIngestionStatus({ openModalWhenRunning: true });
+      void syncCurrentIngestionStatus({
+        jobId: jobStart.job_id,
+        openModalWhenRunning: true,
+      });
     }
   }
 
