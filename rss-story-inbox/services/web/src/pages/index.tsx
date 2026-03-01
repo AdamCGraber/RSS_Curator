@@ -107,9 +107,15 @@ export default function QueuePage() {
     }
   }
 
-    if (!ingestionJob || ingestionJob.status !== "running") {
-    const updateElapsed = () => {
-      const startedAtMs = startTimestampRef.current;
+    const initializeQueuePage = async () => {
+      await Promise.allSettled([
+        load(),
+        loadIngestSettings(),
+        syncCurrentIngestionStatus({ openModalWhenRunning: true }),
+      ]);
+    };
+
+    void initializeQueuePage();
       if (!startedAtMs) {
       const seconds = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
 
