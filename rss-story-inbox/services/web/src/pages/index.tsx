@@ -203,7 +203,7 @@ export default function QueuePage() {
         `Ingestion complete: ${result.inserted ?? 0} inserted, ${result.skipped ?? 0} skipped. Refreshing queue...`
       );
 
-      await load({ clearNotice: false });
+  }, [ingestionModalOpen]);
     } catch (e: any) {
       const message = parseError(e);
       const completedAt = new Date().toISOString();
