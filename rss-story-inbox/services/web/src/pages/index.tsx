@@ -270,7 +270,8 @@ export default function QueuePage() {
         </label>
         <input
           type="range"
-    return startIngestion();
+    await startIngestion();
+  // Component render
           value={thresholdPct}
 
   async function handleRefreshQueueFromModal() {
