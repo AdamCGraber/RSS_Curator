@@ -17,6 +17,12 @@ type IngestionJob = {
   message?: string | null;
 };
 
+type IngestionJobStartResponse = {
+  job_id: string;
+  status: "running";
+  already_running?: boolean;
+};
+
 const STALLED_SECONDS = 90;
 
 export default function QueuePage() {
@@ -224,8 +230,11 @@ export default function QueuePage() {
   async function retryIngestion() {
     console.info("ingestion_retry_clicked", { at: new Date().toISOString() });
     // Backend start endpoint only returns a running job handle; completion comes from status polling.
-    let jobStart: { job_id: string; status: "running"; already_running?: boolean };
+    let jobStart: IngestionJobStartResponse;
       jobStart = await apiPost("/admin/ingest", {
+      if (jobStart.status !== "running" || !jobStart.job_id) {
+        throw new Error("Ingestion start returned an invalid response.");
+      }
 
       job_id: jobStart.job_id,
     if (jobStart.already_running) {
