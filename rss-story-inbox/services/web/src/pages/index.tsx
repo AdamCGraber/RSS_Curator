@@ -17,6 +17,12 @@ type IngestionJob = {
   message?: string | null;
 };
 
+type IngestionJobStartResponse = {
+  job_id: string;
+  status: "running";
+  already_running?: boolean;
+};
+
 const STALLED_SECONDS = 90;
 
 export default function QueuePage() {
@@ -61,6 +67,22 @@ export default function QueuePage() {
     return message;
   }
 
+  async function handleTerminalIngestionStatus(status: IngestionJob) {
+    if (status.status === "completed") {
+      console.info("ingestion_completed", { job_id: status.job_id, completed_at: status.completed_at });
+      setNotice(
+        `Ingestion complete: ${status.inserted ?? 0} inserted, ${status.skipped ?? 0} skipped. Refreshing queue...`
+      );
+      await load({ clearNotice: false });
+      return;
+    }
+
+    if (status.status === "failed") {
+      console.info("ingestion_failed", { job_id: status.job_id, error: status.error });
+      setIngestionModalOpen(true);
+    }
+  }
+
   async function load(options?: { clearNotice?: boolean }) {
     const { clearNotice = false } = options ?? {};
     setErr("");
@@ -85,24 +107,22 @@ export default function QueuePage() {
     }
   }
 
-  async function syncCurrentIngestionStatus(options?: { openModalWhenRunning?: boolean }) {
-    try {
-      const current = await apiGet("/admin/ingest/status/current");
-      if (current?.job_id) {
-        setIngestionJob(current);
-        if (options?.openModalWhenRunning) {
-          setIngestionModalOpen(true);
-        }
-      }
-    } catch {
-      // ignore status read failure
-    }
-  }
+    const initializeQueuePage = async () => {
+      await Promise.allSettled([
+        load(),
+        loadIngestSettings(),
+        syncCurrentIngestionStatus({ openModalWhenRunning: true }),
+      ]);
+    };
 
-  useEffect(() => {
-    load();
-    loadIngestSettings();
-    syncCurrentIngestionStatus({ openModalWhenRunning: true });
+    void initializeQueuePage();
+      if (!startedAtMs) {
+      const seconds = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
+
+    updateElapsed();
+    const timer = window.setInterval(updateElapsed, 1000);
+  }, [ingestionJob]);
+    syncCurrentIngestionStatus();
   }, []);
 
   useEffect(() => {
@@ -130,85 +150,8 @@ export default function QueuePage() {
   }, [ingestionJob?.job_id, ingestionJob?.started_at, running]);
 
   useEffect(() => {
-    if (!running || !ingestionJob?.job_id) {
-      return;
-    }
-
-    let canceled = false;
-    let polls = 0;
-    let timeoutId: number | null = null;
-
-    const poll = async () => {
-      polls += 1;
-      try {
-        const latest = await apiGet(`/admin/ingest/status/${ingestionJob.job_id}`);
-        if (canceled) return;
-        setIngestionJob(latest);
-
-        if (latest.status === "completed") {
-          console.info("ingestion_completed", { job_id: latest.job_id, completed_at: latest.completed_at });
-          setNotice(
-            `Ingestion complete: ${latest.inserted ?? 0} inserted, ${latest.skipped ?? 0} skipped. Refreshing queue...`
-          );
-          await load({ clearNotice: false });
-          return;
-        }
-
-        if (latest.status === "failed") {
-          console.info("ingestion_failed", { job_id: latest.job_id, error: latest.error });
-          setIngestionModalOpen(true);
-          return;
-        }
-
-        const delayMs = polls <= 10 ? 1000 : 2500;
-        timeoutId = window.setTimeout(poll, delayMs);
-      } catch (e: any) {
-        const message = parseError(e);
-        const terminalStatusError = message.includes("Ingestion job not found") || message.includes("status 404");
-
-        if (terminalStatusError) {
-          setIngestionJob((prev) => ({
-            job_id: prev?.job_id || ingestionJob.job_id,
-            status: "failed",
-            started_at: prev?.started_at || new Date().toISOString(),
-            completed_at: new Date().toISOString(),
-            error: "Ingestion status is no longer available (job not found). Please retry ingestion.",
-            message: "Ingestion failed.",
-          }));
-          setIngestionModalOpen(true);
-          console.info("ingestion_failed", { job_id: ingestionJob.job_id, error: message });
-          return;
-        }
-
-        if (!canceled) {
-          timeoutId = window.setTimeout(poll, 3000);
-        }
-      }
-    };
-
-    poll();
-
-    return () => {
-      canceled = true;
-      if (timeoutId) {
-        window.clearTimeout(timeoutId);
-      }
-    };
-  }, [running, ingestionJob?.job_id]);
-
-  useEffect(() => {
-    if (!ingestionModalOpen) {
-      return;
-    }
-
-    const root = modalRef.current;
-    const selector = "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])";
-    const focusables = root ? Array.from(root.querySelectorAll<HTMLElement>(selector)) : [];
-    focusables[0]?.focus();
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Tab" || focusables.length === 0) {
-        return;
+        if (latest.status !== "running") {
+          await handleTerminalIngestionStatus(latest);
       }
       const currentIndex = focusables.indexOf(document.activeElement as HTMLElement);
       const nextIndex = event.shiftKey
@@ -238,64 +181,73 @@ export default function QueuePage() {
     setErr("");
     setNotice("");
     setIngestionModalOpen(true);
-    const clickTime = Date.now();
-    console.info("ingestion_start_clicked", { at: new Date(clickTime).toISOString() });
-
-    let start: { job_id: string; already_running?: boolean };
-    try {
-      start = await apiPost("/admin/ingest", {
-        cluster_similarity_threshold: thresholdPct / 100,
-        cluster_time_window_days: timeWindowDays,
-      });
-    } catch (e: any) {
-      const message = parseError(e);
-      setIngestionJob({
-        job_id: "start-failure",
-        status: "failed",
-        started_at: new Date().toISOString(),
-        completed_at: new Date().toISOString(),
-        error: message,
-        message: "Ingestion failed.",
-      });
-      setIngestionModalOpen(true);
-      return;
-    }
-
+    const startedAt = new Date().toISOString();
     setIngestionJob({
-      job_id: start.job_id,
+      job_id: "sync-ingest",
       status: "running",
-      started_at: new Date().toISOString(),
+      started_at: startedAt,
       message: "Ingestion running…",
     });
 
-    if (start.already_running) {
-      setNotice("Ingestion already running. Showing current job status.");
-    }
-
     try {
-      const status = await apiGet(`/admin/ingest/status/${start.job_id}`);
-      setIngestionJob(status);
-      console.info("ingestion_job_started", { job_id: status.job_id, already_running: start.already_running });
-    } catch (e: any) {
-      console.warn("ingestion_status_initial_fetch_failed", {
-        job_id: start.job_id,
-        error: parseError(e),
+      const result = await apiPost("/admin/ingest", {
+        cluster_similarity_threshold: thresholdPct / 100,
+        cluster_time_window_days: timeWindowDays,
       });
-      console.info("ingestion_job_started", { job_id: start.job_id, already_running: start.already_running });
+
+      const completedAt = new Date().toISOString();
+
+      setIngestionJob({
+        job_id: "sync-ingest",
+        status: "completed",
+        started_at: startedAt,
+        completed_at: completedAt,
+        inserted: result.inserted ?? 0,
+        skipped: result.skipped ?? 0,
+        cluster_similarity_threshold: result.cluster_similarity_threshold ?? thresholdPct / 100,
+        cluster_time_window_days: result.cluster_time_window_days ?? timeWindowDays,
+        message: "Ingestion complete.",
+      });
+
+      console.info("ingestion_completed", { inserted: result.inserted, skipped: result.skipped });
+
+      setNotice(
+        `Ingestion complete: ${result.inserted ?? 0} inserted, ${result.skipped ?? 0} skipped. Refreshing queue...`
+      );
+
+  }, [ingestionModalOpen]);
+    } catch (e: any) {
+      const message = parseError(e);
+      const completedAt = new Date().toISOString();
+
+      setIngestionJob({
+        job_id: "sync-ingest",
+        status: "failed",
+        started_at: startedAt,
+        completed_at: completedAt,
+        error: message,
+        message: "Ingestion failed.",
+      });
+
+      setIngestionModalOpen(true);
     }
   }
 
   async function retryIngestion() {
     console.info("ingestion_retry_clicked", { at: new Date().toISOString() });
-    await startIngestion();
-  }
+    // Backend start endpoint only returns a running job handle; completion comes from status polling.
+    let jobStart: IngestionJobStartResponse;
+      jobStart = await apiPost("/admin/ingest", {
+      if (jobStart.status !== "running" || !jobStart.job_id) {
+        throw new Error("Ingestion start returned an invalid response.");
+      }
 
-  const runningMessage =
-    elapsedSeconds >= STALLED_SECONDS
-      ? "Still working… this is taking longer than usual. You can run in background and continue reviewing the Queue."
-      : "We’re fetching and processing new items. This can take a minute.";
-
-  return (
+      job_id: jobStart.job_id,
+    if (jobStart.already_running) {
+      const status = await apiGet(`/admin/ingest/status/${jobStart.job_id}`);
+      console.info("ingestion_job_started", { job_id: status.job_id, already_running: jobStart.already_running });
+        job_id: jobStart.job_id,
+      console.info("ingestion_job_started", { job_id: jobStart.job_id, already_running: jobStart.already_running });
     <div>
       <h1 style={{ marginTop: 0 }}>Queue</h1>
       <p>Review one story at a time. Keep / Reject / Defer.</p>
@@ -318,24 +270,25 @@ export default function QueuePage() {
         >
           <span aria-label="Ingestion in progress">⏳ Ingestion running… ({elapsedLabel})</span>
           <button
-            onClick={() => setIngestionModalOpen(true)}
-            style={{ textDecoration: "underline", background: "transparent", border: "none", cursor: "pointer" }}
-          >
-            View status
-          </button>
-        </div>
-      )}
-
-      <div style={{ marginBottom: 12, border: "1px solid #ddd", borderRadius: 8, padding: 12 }}>
-        <h3 style={{ marginTop: 0 }}>Ingestion configuration</h3>
-        <label>
+    // Treat POST /admin/ingest as async start only; terminal states come from polling.
+    console.info("ingestion_job_started", { job_id: jobStart.job_id, already_running: jobStart.already_running });
           <b>Story similarity threshold</b> ({thresholdPct}%)
         </label>
         <input
           type="range"
-          min={0}
-          max={100}
+    await startIngestion();
+  // Component render
           value={thresholdPct}
+
+  async function handleRefreshQueueFromModal() {
+    await load({ clearNotice: false });
+    setIngestionModalOpen(false);
+  }
+
+  function handleCopyErrorDetails() {
+    navigator.clipboard?.writeText(JSON.stringify(ingestionJob, null, 2));
+  }
+
           onChange={(e) => setThresholdPct(Number(e.target.value))}
           style={{ width: "100%", marginTop: 6 }}
         />
@@ -479,3 +432,5 @@ export default function QueuePage() {
     </div>
   );
 }
+                  <button onClick={handleRefreshQueueFromModal}>Refresh Queue</button>
+                  <button style={{ marginLeft: 8 }} onClick={handleCopyErrorDetails}>
