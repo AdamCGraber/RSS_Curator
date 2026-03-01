@@ -112,13 +112,25 @@ export default function QueuePage() {
     }
   }
 
-  async function syncCurrentIngestionStatus(options: { openModalWhenRunning?: boolean } = {}) {
+  async function syncCurrentIngestionStatus(options: {
+    openModalWhenRunning?: boolean;
+    jobId?: string;
+  } = {}) {
+    const { openModalWhenRunning, jobId } = options;
+
     try {
-      const latest = (await apiGet("/admin/ingest/status")) as IngestionJob | null;
+      let latest: IngestionJob | null = null;
+
+      if (jobId) {
+        latest = (await apiGet(`/admin/ingest/status/${jobId}`)) as IngestionJob;
+      } else {
+        latest = (await apiGet("/admin/ingest/status/current")) as IngestionJob | null;
+      }
+
       if (!latest) return;
 
       setIngestionJob(latest);
-      if (latest.status === "running" && options.openModalWhenRunning) {
+      if (latest.status === "running" && openModalWhenRunning) {
         setIngestionModalOpen(true);
       }
 
@@ -271,7 +283,7 @@ export default function QueuePage() {
     if (!running || !ingestionJob?.job_id) return;
 
     const interval = window.setInterval(() => {
-      void syncCurrentIngestionStatus();
+      void syncCurrentIngestionStatus({ jobId: ingestionJob.job_id });
     }, 4000);
 
     return () => window.clearInterval(interval);
