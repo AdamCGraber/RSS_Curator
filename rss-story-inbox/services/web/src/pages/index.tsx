@@ -273,8 +273,7 @@ export default function QueuePage() {
         </label>
         <input
           type="range"
-          min={0}
-          max={100}
+    return startIngestion();
           value={thresholdPct}
 
   async function handleRefreshQueueFromModal() {
