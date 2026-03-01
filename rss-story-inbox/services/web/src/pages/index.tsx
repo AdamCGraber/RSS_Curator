@@ -255,20 +255,8 @@ export default function QueuePage() {
         >
           <span aria-label="Ingestion in progress">⏳ Ingestion running… ({elapsedLabel})</span>
           <button
-            onClick={() => setIngestionModalOpen(true)}
-            style={{ textDecoration: "underline", background: "transparent", border: "none", cursor: "pointer" }}
-          >
-      if (status.status !== "running") {
-        await handleTerminalIngestionStatus(status);
-      }
-            View status
-          </button>
-        </div>
-      )}
-
-      <div style={{ marginBottom: 12, border: "1px solid #ddd", borderRadius: 8, padding: 12 }}>
-        <h3 style={{ marginTop: 0 }}>Ingestion configuration</h3>
-        <label>
+    // Treat POST /admin/ingest as async start only; terminal states come from polling.
+    console.info("ingestion_job_started", { job_id: jobStart.job_id, already_running: jobStart.already_running });
           <b>Story similarity threshold</b> ({thresholdPct}%)
         </label>
         <input
