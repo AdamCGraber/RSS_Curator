@@ -17,10 +17,11 @@ type IngestionJob = {
   message?: string | null;
 };
 
-type IngestionJobStartResponse = {
-  job_id: string;
-  status: "running";
-  already_running?: boolean;
+type IngestResponse = {
+  inserted: number;
+  skipped: number;
+  cluster_similarity_threshold: number;
+  cluster_time_window_days: number;
 };
 
 const STALLED_SECONDS = 90;
@@ -112,34 +113,8 @@ export default function QueuePage() {
     }
   }
 
-  async function syncCurrentIngestionStatus(options: {
-    openModalWhenRunning?: boolean;
-    jobId?: string;
-  } = {}) {
-    const { openModalWhenRunning, jobId } = options;
-
-    try {
-      let latest: IngestionJob | null = null;
-
-      if (jobId) {
-        latest = (await apiGet(`/admin/ingest/status/${jobId}`)) as IngestionJob;
-      } else {
-        latest = (await apiGet("/admin/ingest/status/current")) as IngestionJob | null;
-      }
-
-      if (!latest) return;
-
-      setIngestionJob(latest);
-      if (latest.status === "running" && openModalWhenRunning) {
-        setIngestionModalOpen(true);
-      }
-
-      if (latest.status !== "running") {
-        await handleTerminalIngestionStatus(latest);
-      }
-    } catch {
-      // best effort; endpoint may not exist in all deployments
-    }
+  async function syncCurrentIngestionStatus() {
+    return;
   }
 
   async function act(action: "keep" | "reject" | "defer") {
@@ -159,44 +134,50 @@ export default function QueuePage() {
     setNotice("");
     setIngestionModalOpen(true);
 
-    let jobStart: IngestionJobStartResponse;
-    try {
-      jobStart = await apiPost("/admin/ingest", {
-        cluster_similarity_threshold: thresholdPct / 100,
-        cluster_time_window_days: timeWindowDays,
-      });
-    } catch (e: any) {
-      const message = parseError(e);
-      const completedAt = new Date().toISOString();
-      setIngestionJob({
-        job_id: "sync-ingest",
-        status: "failed",
-        started_at: completedAt,
-        completed_at: completedAt,
-        error: message,
-        message: "Ingestion failed.",
-      });
-      setIngestionModalOpen(true);
-      return;
-    }
-
-    if (jobStart.status !== "running" || !jobStart.job_id) {
-      setErr("Ingestion start returned an invalid response.");
-      return;
-    }
-
     const startedAt = new Date().toISOString();
+
     setIngestionJob({
-      job_id: jobStart.job_id,
+      job_id: "sync-ingest",
       status: "running",
       started_at: startedAt,
       message: "Ingestion running…",
     });
 
-    void syncCurrentIngestionStatus({
-      jobId: jobStart.job_id,
-      openModalWhenRunning: true,
-    });
+    try {
+      const result = (await apiPost("/admin/ingest", {
+        cluster_similarity_threshold: thresholdPct / 100,
+        cluster_time_window_days: timeWindowDays,
+      })) as IngestResponse;
+
+      const completedAt = new Date().toISOString();
+
+      const completedJob: IngestionJob = {
+        job_id: "sync-ingest",
+        status: "completed",
+        started_at: startedAt,
+        completed_at: completedAt,
+        inserted: result.inserted ?? 0,
+        skipped: result.skipped ?? 0,
+        cluster_similarity_threshold: result.cluster_similarity_threshold,
+        cluster_time_window_days: result.cluster_time_window_days,
+        message: "Ingestion complete.",
+      };
+
+      setIngestionJob(completedJob);
+      await handleTerminalIngestionStatus(completedJob);
+    } catch (e: any) {
+      const message = parseError(e);
+      const completedAt = new Date().toISOString();
+
+      setIngestionJob({
+        job_id: "sync-ingest",
+        status: "failed",
+        started_at: startedAt,
+        completed_at: completedAt,
+        error: message,
+        message: "Ingestion failed.",
+      });
+    }
   }
 
   async function retryIngestion() {
@@ -204,34 +185,48 @@ export default function QueuePage() {
     setNotice("");
     setIngestionModalOpen(true);
 
-    let jobStart: IngestionJobStartResponse;
-    try {
-      jobStart = await apiPost("/admin/ingest", {
-        cluster_similarity_threshold: thresholdPct / 100,
-        cluster_time_window_days: timeWindowDays,
-      });
-    } catch (e: any) {
-      setErr(parseError(e));
-      return;
-    }
-
-    if (jobStart.status !== "running" || !jobStart.job_id) {
-      setErr("Ingestion start returned an invalid response.");
-      return;
-    }
-
     const startedAt = new Date().toISOString();
+
     setIngestionJob({
-      job_id: jobStart.job_id,
+      job_id: "sync-ingest",
       status: "running",
       started_at: startedAt,
       message: "Ingestion running…",
     });
 
-    if (jobStart.already_running) {
-      void syncCurrentIngestionStatus({
-        jobId: jobStart.job_id,
-        openModalWhenRunning: true,
+    try {
+      const result = (await apiPost("/admin/ingest", {
+        cluster_similarity_threshold: thresholdPct / 100,
+        cluster_time_window_days: timeWindowDays,
+      })) as IngestResponse;
+
+      const completedAt = new Date().toISOString();
+
+      const completedJob: IngestionJob = {
+        job_id: "sync-ingest",
+        status: "completed",
+        started_at: startedAt,
+        completed_at: completedAt,
+        inserted: result.inserted ?? 0,
+        skipped: result.skipped ?? 0,
+        cluster_similarity_threshold: result.cluster_similarity_threshold,
+        cluster_time_window_days: result.cluster_time_window_days,
+        message: "Ingestion complete.",
+      };
+
+      setIngestionJob(completedJob);
+      await handleTerminalIngestionStatus(completedJob);
+    } catch (e: any) {
+      const message = parseError(e);
+      const completedAt = new Date().toISOString();
+
+      setIngestionJob({
+        job_id: "sync-ingest",
+        status: "failed",
+        started_at: startedAt,
+        completed_at: completedAt,
+        error: message,
+        message: "Ingestion failed.",
       });
     }
   }
@@ -247,11 +242,7 @@ export default function QueuePage() {
 
   useEffect(() => {
     void (async () => {
-      await Promise.allSettled([
-        load(),
-        loadIngestSettings(),
-        syncCurrentIngestionStatus({ openModalWhenRunning: true }),
-      ]);
+      await Promise.allSettled([load(), loadIngestSettings()]);
     })();
   }, []);
 
@@ -275,16 +266,6 @@ export default function QueuePage() {
     const timer = window.setInterval(update, 1000);
     return () => window.clearInterval(timer);
   }, [ingestionJob?.job_id, ingestionJob?.started_at, running]);
-
-  useEffect(() => {
-    if (!running || !ingestionJob?.job_id) return;
-
-    const interval = window.setInterval(() => {
-      void syncCurrentIngestionStatus({ jobId: ingestionJob.job_id });
-    }, 4000);
-
-    return () => window.clearInterval(interval);
-  }, [ingestionJob?.job_id, running]);
 
   useEffect(() => {
     if (!ingestionModalOpen) return;
@@ -382,7 +363,9 @@ export default function QueuePage() {
           Only articles published within this window will be compared as the same story.
         </p>
 
-        <button onClick={startIngestion}>Start ingestion</button>
+        <button onClick={startIngestion} disabled={running}>
+          {running ? "Ingestion running..." : "Start ingestion"}
+        </button>
         <button onClick={() => load({ clearNotice: true })} style={{ marginLeft: 8 }}>
           Refresh
         </button>
@@ -514,7 +497,9 @@ export default function QueuePage() {
                   </pre>
                 </details>
                 <div style={{ marginTop: 10 }}>
-                  <button onClick={retryIngestion}>Retry ingestion</button>
+                  <button onClick={retryIngestion} disabled={running}>
+                    {running ? "Ingestion running..." : "Retry ingestion"}
+                  </button>
                   <button style={{ marginLeft: 8 }} onClick={handleCopyErrorDetails}>
                     Copy error details
                   </button>
