@@ -1,58 +1,75 @@
 services:
   db:
-    image: postgres:16
+    image: postgres:16-alpine
     environment:
-      POSTGRES_DB: rss
-      POSTGRES_USER: rss
-      POSTGRES_PASSWORD: rss
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: rss_curator
     volumes:
       - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d rss_curator"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
 
   api:
     build:
       context: ./services/api
     env_file:
-      - ./.env
+      - .env
     environment:
-      DATABASE_URL: postgresql+psycopg://rss:rss@db:5432/rss
+      DATABASE_URL: postgresql+psycopg://app:app@db:5432/rss_curator
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      INGEST_HOUR_LOCAL: ${INGEST_HOUR_LOCAL:-7}
+      INGEST_MINUTE_LOCAL: ${INGEST_MINUTE_LOCAL:-0}
       PYTHONPATH: /app
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - "8001:8000"
-    depends_on:
-      - db
+    restart: unless-stopped
     command: >
-      bash -lc "alembic upgrade heads &&
-                uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
-
+      bash -lc '
+        cd /app &&
+        until pg_isready -h db -p 5432 -U app -d rss_curator; do
+          echo "Waiting for Postgres...";
+          sleep 2;
+        done;
+        alembic upgrade heads &&
+        uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      '
+      
   worker:
     build:
       context: ./services/worker
     env_file:
-      - ./.env
+      - .env
     environment:
-      DATABASE_URL: postgresql+psycopg://rss:rss@db:5432/rss
       API_BASE_URL: http://api:8000
-      INGEST_HOUR_LOCAL: ${INGEST_HOUR_LOCAL:-2}
+      INGEST_HOUR_LOCAL: ${INGEST_HOUR_LOCAL:-7}
       INGEST_MINUTE_LOCAL: ${INGEST_MINUTE_LOCAL:-0}
     depends_on:
-      - db
-      - api
+      api:
+        condition: service_started
+    restart: unless-stopped
 
   web:
     build:
       context: ./services/web
-    env_file:
-      - ./.env
     environment:
       NEXT_PUBLIC_API_BASE: http://localhost:8001
-      BACKEND_URL: http://api:8000
-      ENABLE_ADMIN_ACTIONS: "true"
+    depends_on:
+      api:
+        condition: service_started
     ports:
       - "3000:3000"
-    depends_on:
-      - api
+    restart: unless-stopped
 
 volumes:
   pgdata:
