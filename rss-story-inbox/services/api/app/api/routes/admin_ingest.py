@@ -4,11 +4,12 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.db import SessionLocal, get_db
+from app.core.db import SessionLocal, engine, get_db
 from app.models.article import Article
 from app.models.ingestion_job import IngestionJob
 from app.models.user_preference import UserPreference
@@ -49,6 +50,7 @@ class IngestRequest(BaseModel):
 
 _ingest_lock = Lock()
 ORPHANED_RUNNING_JOB_TIMEOUT_SECONDS = 180
+INGESTION_ADVISORY_LOCK_KEY = 98172341
 
 
 def ensure_preferences(db: Session) -> UserPreference:
@@ -113,6 +115,55 @@ def _get_running_job(db: Session) -> IngestionJob | None:
     )
 
 
+def _is_worker_alive_via_advisory_lock() -> bool:
+    if engine.dialect.name != "postgresql":
+        return False
+
+    with engine.connect() as conn:
+        acquired = conn.execute(
+            text("SELECT pg_try_advisory_lock(:lock_key)"),
+            {"lock_key": INGESTION_ADVISORY_LOCK_KEY},
+        ).scalar()
+
+        if acquired:
+            conn.execute(
+                text("SELECT pg_advisory_unlock(:lock_key)"),
+                {"lock_key": INGESTION_ADVISORY_LOCK_KEY},
+            )
+            return False
+
+        return True
+
+
+def _acquire_worker_advisory_lock():
+    if engine.dialect.name != "postgresql":
+        return None
+
+    conn = engine.connect()
+    acquired = conn.execute(
+        text("SELECT pg_try_advisory_lock(:lock_key)"),
+        {"lock_key": INGESTION_ADVISORY_LOCK_KEY},
+    ).scalar()
+    if not acquired:
+        conn.close()
+        raise RuntimeError("Another ingestion worker already owns the advisory lock")
+
+    return conn
+
+
+def _release_worker_advisory_lock(conn):
+    if conn is None:
+        return
+
+    try:
+        conn.execute(
+            text("SELECT pg_advisory_unlock(:lock_key)"),
+            {"lock_key": INGESTION_ADVISORY_LOCK_KEY},
+        )
+    finally:
+        conn.close()
+
+
 def _touch_job(db: Session, job: IngestionJob):
     job.updated_at = datetime.now(timezone.utc)
     db.commit()
@@ -128,6 +179,11 @@ def _recover_orphaned_running_job(db: Session, job: IngestionJob) -> bool:
     now = datetime.now(timezone.utc)
     age_seconds = max(0.0, (now - job.updated_at).total_seconds())
     if age_seconds <= ORPHANED_RUNNING_JOB_TIMEOUT_SECONDS:
+        return False
+
+    if _is_worker_alive_via_advisory_lock():
+        job.updated_at = now
+        db.commit()
         return False
 
     job.status = "FAILED"
@@ -166,7 +222,9 @@ def _mark_job_complete(db: Session, job: IngestionJob):
 
 def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
     db = SessionLocal()
+    lock_conn = None
     try:
+        lock_conn = _acquire_worker_advisory_lock()
         job = db.get(IngestionJob, job_id)
         if not job:
             return
@@ -222,6 +280,7 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
         if job:
             _mark_job_failed(db, job)
     finally:
+        _release_worker_advisory_lock(lock_conn)
         db.close()
 
 
