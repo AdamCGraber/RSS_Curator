@@ -192,6 +192,19 @@ def _recover_orphaned_running_job(db: Session, job: IngestionJob) -> bool:
     return True
 
 
+def _recover_if_stale_running_job(db: Session, job: IngestionJob | None) -> IngestionJob | None:
+    if not job or job.status != "RUNNING":
+        return job
+
+    with _ingest_lock:
+        recovered = _recover_orphaned_running_job(db, job)
+        if recovered:
+            return None
+
+    db.refresh(job)
+    return job
+
+
 def _update_progress(db: Session, job: IngestionJob, force: bool = False):
     if not force and job.processed_items % 10 != 0:
         return
@@ -339,6 +352,7 @@ def ingest(payload: IngestRequest | None = None, db: Session = Depends(get_db)):
 @router.get("/admin/ingest/status/current", response_model=IngestionJobStatus | None)
 def ingest_status_current(db: Session = Depends(get_db)):
     job = _get_running_job(db)
+    job = _recover_if_stale_running_job(db, job)
     if not job:
         return None
     return _as_status(job)
@@ -354,12 +368,28 @@ def ingest_status(job_id: str, db: Session = Depends(get_db)):
     job = db.get(IngestionJob, parsed_id)
     if not job:
         raise HTTPException(status_code=404, detail="Ingestion job not found")
+
+    recovered_job = _recover_if_stale_running_job(db, job)
+    if recovered_job is None:
+        job = db.get(IngestionJob, parsed_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Ingestion job not found")
+    else:
+        job = recovered_job
+
     return _as_status(job)
 
 
 @router.get("/api/ingestion/status")
 def api_ingestion_status(db: Session = Depends(get_db)):
     job = db.query(IngestionJob).order_by(IngestionJob.started_at.desc()).first()
+    if job and job.status == "RUNNING":
+        recovered_job = _recover_if_stale_running_job(db, job)
+        if recovered_job is None:
+            job = db.query(IngestionJob).order_by(IngestionJob.started_at.desc()).first()
+        else:
+            job = recovered_job
+
     if not job:
         return {
             "status": "COMPLETED",
