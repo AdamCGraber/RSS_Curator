@@ -48,6 +48,7 @@ class IngestRequest(BaseModel):
 
 
 _ingest_lock = Lock()
+ORPHANED_RUNNING_JOB_TIMEOUT_SECONDS = 180
 
 
 def ensure_preferences(db: Session) -> UserPreference:
@@ -110,6 +111,24 @@ def _get_running_job(db: Session) -> IngestionJob | None:
         .order_by(IngestionJob.started_at.desc())
         .first()
     )
+
+
+def _recover_orphaned_running_job(db: Session, job: IngestionJob) -> bool:
+    """Mark stale RUNNING jobs as FAILED so ingestion can be restarted.
+
+    Jobs run on daemon threads in-process, so a process restart can strand RUNNING
+    rows forever. If a RUNNING job has not updated for a safety window, treat it as
+    orphaned and fail it.
+    """
+    now = datetime.now(timezone.utc)
+    age_seconds = max(0.0, (now - job.updated_at).total_seconds())
+    if age_seconds <= ORPHANED_RUNNING_JOB_TIMEOUT_SECONDS:
+        return False
+
+    job.status = "FAILED"
+    job.updated_at = now
+    db.commit()
+    return True
 
 
 def _update_progress(db: Session, job: IngestionJob, force: bool = False):
@@ -221,7 +240,9 @@ def ingest(payload: IngestRequest | None = None, db: Session = Depends(get_db)):
     with _ingest_lock:
         running_job = _get_running_job(db)
         if running_job:
-            return IngestionJobStartResponse(job_id=str(running_job.id), status="RUNNING", already_running=True)
+            recovered = _recover_orphaned_running_job(db, running_job)
+            if not recovered:
+                return IngestionJobStartResponse(job_id=str(running_job.id), status="RUNNING", already_running=True)
 
         now = datetime.now(timezone.utc)
         job = IngestionJob(
