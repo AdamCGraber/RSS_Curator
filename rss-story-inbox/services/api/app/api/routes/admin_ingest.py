@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from threading import Lock, Thread
+from threading import RLock, Thread
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -47,8 +47,9 @@ class IngestRequest(BaseModel):
     cluster_time_window_days: int | None = Field(default=None, ge=1, le=30)
 
 
-_ingest_lock = Lock()
+_ingest_lock = RLock()
 ORPHANED_RUNNING_JOB_TIMEOUT_SECONDS = 180
+_active_job_ids: set[UUID] = set()
 
 
 def ensure_preferences(db: Session) -> UserPreference:
@@ -113,6 +114,26 @@ def _get_running_job(db: Session) -> IngestionJob | None:
     )
 
 
+def _is_job_active_in_process(job_id: UUID) -> bool:
+    with _ingest_lock:
+        return job_id in _active_job_ids
+
+
+def _mark_job_active_in_process(job_id: UUID):
+    with _ingest_lock:
+        _active_job_ids.add(job_id)
+
+
+def _clear_job_active_in_process(job_id: UUID):
+    with _ingest_lock:
+        _active_job_ids.discard(job_id)
+
+
+def _touch_job(db: Session, job: IngestionJob):
+    job.updated_at = datetime.now(timezone.utc)
+    db.commit()
+
+
 def _recover_orphaned_running_job(db: Session, job: IngestionJob) -> bool:
     """Mark stale RUNNING jobs as FAILED so ingestion can be restarted.
 
@@ -120,6 +141,9 @@ def _recover_orphaned_running_job(db: Session, job: IngestionJob) -> bool:
     rows forever. If a RUNNING job has not updated for a safety window, treat it as
     orphaned and fail it.
     """
+    if _is_job_active_in_process(job.id):
+        return False
+
     now = datetime.now(timezone.utc)
     age_seconds = max(0.0, (now - job.updated_at).total_seconds())
     if age_seconds <= ORPHANED_RUNNING_JOB_TIMEOUT_SECONDS:
@@ -171,6 +195,7 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
 
         discovered_rows: list[dict] = []
         for source in sources:
+            _touch_job(db, job)
             items = fetch_feed(source["feed_url"])
             for item in items:
                 url = item.get("url")
@@ -207,7 +232,9 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
 
         _update_progress(db, job, force=True)
 
+        _touch_job(db, job)
         cluster_recent(db, threshold=threshold, time_window_days=window_days)
+        _touch_job(db, job)
         score_clusters(db)
         db.commit()
 
@@ -218,6 +245,7 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
         if job:
             _mark_job_failed(db, job)
     finally:
+        _clear_job_active_in_process(job_id)
         db.close()
 
 
@@ -260,7 +288,18 @@ def ingest(payload: IngestRequest | None = None, db: Session = Depends(get_db)):
         db.add(job)
         db.commit()
 
-    Thread(target=run_ingestion_job, args=(job.id, threshold, window_days), daemon=True).start()
+    _mark_job_active_in_process(job.id)
+    try:
+        Thread(target=run_ingestion_job, args=(job.id, threshold, window_days), daemon=True).start()
+    except Exception as exc:
+        _clear_job_active_in_process(job.id)
+        failed_job = db.get(IngestionJob, job.id)
+        if failed_job:
+            failed_job.status = "FAILED"
+            failed_job.updated_at = datetime.now(timezone.utc)
+            db.commit()
+        raise HTTPException(status_code=500, detail="Failed to start ingestion worker") from exc
+
     return IngestionJobStartResponse(job_id=str(job.id), status="RUNNING", already_running=False)
 
 
