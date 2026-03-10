@@ -1,103 +1,41 @@
 from datetime import datetime, timezone
 from threading import Lock, Thread
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
-from app.core.db import SessionLocal, get_db
-from app.models.article import Article
-from app.models.user_preference import UserPreference
+from sqlalchemy.orm import Session
+
 from app.core.config import settings
-from app.services.ingest.fetch_rss import fetch_feed
+from app.core.db import SessionLocal, engine, get_db
+from app.models.article import Article
+from app.models.ingestion_job import IngestionJob
+from app.models.user_preference import UserPreference
 from app.services.cluster.clusterer import cluster_recent
+from app.services.ingest.fetch_rss import fetch_feed
 from app.services.rank.scorer import score_clusters
 from app.services.sources_state import get_active_sources_snapshot
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(tags=["admin"])
 
 
 class IngestionJobStatus(BaseModel):
     job_id: str
     status: str
     started_at: str
-    completed_at: str | None = None
-    inserted: int | None = None
-    skipped: int | None = None
-    cluster_similarity_threshold: float | None = None
-    cluster_time_window_days: int | None = None
-    error: str | None = None
-    message: str | None = None
+    updated_at: str
+    total_items: int
+    processed_items: int
+    progress_percent: float
+    eta_seconds: int | None = None
 
 
 class IngestionJobStartResponse(BaseModel):
     job_id: str
     status: str
     already_running: bool = False
-
-
-class IngestionJobStore:
-    def __init__(self):
-        self._lock = Lock()
-        self._current_job_id: str | None = None
-        self._jobs: dict[str, dict] = {}
-
-    def start_job(self, threshold: float, window_days: int) -> tuple[str, bool]:
-        with self._lock:
-            if self._current_job_id:
-                current_job = self._jobs.get(self._current_job_id)
-                if current_job and current_job["status"] == "running":
-                    return self._current_job_id, True
-
-            job_id = str(uuid4())
-            self._jobs[job_id] = {
-                "job_id": job_id,
-                "status": "running",
-                "started_at": datetime.now(timezone.utc).isoformat(),
-                "completed_at": None,
-                "inserted": None,
-                "skipped": None,
-                "cluster_similarity_threshold": threshold,
-                "cluster_time_window_days": window_days,
-                "error": None,
-                "message": None,
-            }
-            self._current_job_id = job_id
-            return job_id, False
-
-    def get_job(self, job_id: str) -> dict | None:
-        with self._lock:
-            job = self._jobs.get(job_id)
-            return dict(job) if job else None
-
-    def get_current_running_job(self) -> dict | None:
-        with self._lock:
-            if not self._current_job_id:
-                return None
-            job = self._jobs.get(self._current_job_id)
-            if not job or job["status"] != "running":
-                return None
-            return dict(job)
-
-    def finish_job(self, job_id: str, status: str, **updates):
-        with self._lock:
-            job = self._jobs.get(job_id)
-            if not job:
-                return
-            job.update(
-                {
-                    "status": status,
-                    "completed_at": datetime.now(timezone.utc).isoformat(),
-                    **updates,
-                }
-            )
-            if self._current_job_id == job_id:
-                self._current_job_id = None
-
-
-job_store = IngestionJobStore()
 
 
 class IngestSettings(BaseModel):
@@ -108,6 +46,11 @@ class IngestSettings(BaseModel):
 class IngestRequest(BaseModel):
     cluster_similarity_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
     cluster_time_window_days: int | None = Field(default=None, ge=1, le=30)
+
+
+_ingest_lock = Lock()
+ORPHANED_RUNNING_JOB_TIMEOUT_SECONDS = 180
+INGESTION_ADVISORY_LOCK_KEY = 98172341
 
 
 def ensure_preferences(db: Session) -> UserPreference:
@@ -131,73 +74,230 @@ def ensure_preferences(db: Session) -> UserPreference:
     return prefs
 
 
-def run_ingestion_job(job_id: str, threshold: float, window_days: int):
-    db = SessionLocal()
+def _calculate_eta_seconds(job: IngestionJob) -> int | None:
+    if job.processed_items <= 0 or job.total_items <= 0:
+        return None
+
+    elapsed = max(0.0, (datetime.now(timezone.utc) - job.started_at).total_seconds())
+    if elapsed <= 0:
+        return None
+
+    rate = job.processed_items / elapsed
+    if rate <= 0:
+        return None
+
+    remaining = max(0, job.total_items - job.processed_items)
+    if remaining == 0:
+        return 0
+
+    return int(round(remaining / rate))
+
+
+def _as_status(job: IngestionJob) -> IngestionJobStatus:
+    return IngestionJobStatus(
+        job_id=str(job.id),
+        status=job.status,
+        started_at=job.started_at.isoformat(),
+        updated_at=job.updated_at.isoformat(),
+        total_items=job.total_items,
+        processed_items=job.processed_items,
+        progress_percent=job.progress_percent,
+        eta_seconds=_calculate_eta_seconds(job),
+    )
+
+
+def _get_running_job(db: Session) -> IngestionJob | None:
+    return (
+        db.query(IngestionJob)
+        .filter(IngestionJob.status == "RUNNING")
+        .order_by(IngestionJob.started_at.desc())
+        .first()
+    )
+
+
+def _is_worker_alive_via_advisory_lock() -> bool:
+    if engine.dialect.name != "postgresql":
+        return False
+
+    with engine.connect() as conn:
+        acquired = conn.execute(
+            text("SELECT pg_try_advisory_lock(:lock_key)"),
+            {"lock_key": INGESTION_ADVISORY_LOCK_KEY},
+        ).scalar()
+
+        if acquired:
+            conn.execute(
+                text("SELECT pg_advisory_unlock(:lock_key)"),
+                {"lock_key": INGESTION_ADVISORY_LOCK_KEY},
+            )
+            return False
+
+        return True
+
+
+def _acquire_worker_advisory_lock():
+    if engine.dialect.name != "postgresql":
+        return None
+
+    conn = engine.connect()
+    acquired = conn.execute(
+        text("SELECT pg_try_advisory_lock(:lock_key)"),
+        {"lock_key": INGESTION_ADVISORY_LOCK_KEY},
+    ).scalar()
+    if not acquired:
+        conn.close()
+        raise RuntimeError("Another ingestion worker already owns the advisory lock")
+
+    return conn
+
+
+def _release_worker_advisory_lock(conn):
+    if conn is None:
+        return
+
     try:
+        conn.execute(
+            text("SELECT pg_advisory_unlock(:lock_key)"),
+            {"lock_key": INGESTION_ADVISORY_LOCK_KEY},
+        )
+    finally:
+        conn.close()
+
+
+def _touch_job(db: Session, job: IngestionJob):
+    job.updated_at = datetime.now(timezone.utc)
+    db.commit()
+
+
+def _recover_orphaned_running_job(db: Session, job: IngestionJob) -> bool:
+    """Mark stale RUNNING jobs as FAILED so ingestion can be restarted.
+
+    Jobs run on daemon threads in-process, so a process restart can strand RUNNING
+    rows forever. If a RUNNING job has not updated for a safety window, treat it as
+    orphaned and fail it.
+    """
+    now = datetime.now(timezone.utc)
+    age_seconds = max(0.0, (now - job.updated_at).total_seconds())
+    if age_seconds <= ORPHANED_RUNNING_JOB_TIMEOUT_SECONDS:
+        return False
+
+    if _is_worker_alive_via_advisory_lock():
+        job.updated_at = now
+        db.commit()
+        return False
+
+    job.status = "FAILED"
+    job.updated_at = now
+    db.commit()
+    return True
+
+
+def _recover_if_stale_running_job(db: Session, job: IngestionJob | None) -> IngestionJob | None:
+    if not job or job.status != "RUNNING":
+        return job
+
+    with _ingest_lock:
+        recovered = _recover_orphaned_running_job(db, job)
+        if recovered:
+            return None
+
+    db.refresh(job)
+    return job
+
+
+def _update_progress(db: Session, job: IngestionJob, force: bool = False):
+    if not force and job.processed_items % 10 != 0:
+        return
+
+    if job.total_items <= 0:
+        job.progress_percent = 0
+    else:
+        job.progress_percent = (job.processed_items / job.total_items) * 100
+    job.updated_at = datetime.now(timezone.utc)
+    db.commit()
+
+
+def _mark_job_failed(db: Session, job: IngestionJob):
+    db.refresh(job)
+    job.status = "FAILED"
+    job.updated_at = datetime.now(timezone.utc)
+    db.commit()
+
+
+def _mark_job_complete(db: Session, job: IngestionJob):
+    db.refresh(job)
+    job.processed_items = job.total_items
+    job.progress_percent = 100
+    job.status = "COMPLETED"
+    job.updated_at = datetime.now(timezone.utc)
+    db.commit()
+
+
+def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
+    db = SessionLocal()
+    lock_conn = None
+    try:
+        lock_conn = _acquire_worker_advisory_lock()
+        job = db.get(IngestionJob, job_id)
+        if not job:
+            return
+
         snapshot = get_active_sources_snapshot(db)
         sources = snapshot.get("sources", [])
-        inserted = 0
-        attempted = 0
 
-        for s in sources:
-            items = fetch_feed(s["feed_url"])
-            rows = []
-            for it in items:
-                url = it.get("url")
+        discovered_rows: list[dict] = []
+        for source in sources:
+            _touch_job(db, job)
+            items = fetch_feed(source["feed_url"])
+            for item in items:
+                url = item.get("url")
                 if not url:
                     continue
-                rows.append(
+                discovered_rows.append(
                     {
-                        "source_id": s["id"],
+                        "source_id": source["id"],
                         "url": url,
-                        "title": (it.get("title") or "")[:512],
-                        "raw_excerpt": it.get("summary") or None,
-                        "published_at": it.get("published_at"),
+                        "title": (item.get("title") or "")[:512],
+                        "raw_excerpt": item.get("summary") or None,
+                        "published_at": item.get("published_at"),
                         "status": "INBOX",
                     }
                 )
-            if not rows:
-                continue
-            attempted += len(rows)
-            stmt = insert(Article).values(rows).on_conflict_do_nothing(index_elements=["url"])
-            result = db.execute(stmt)
-            inserted += result.rowcount or 0
 
+        job.total_items = len(discovered_rows)
+        job.updated_at = datetime.now(timezone.utc)
         db.commit()
+
+        processed_count = 0
+        for row in discovered_rows:
+            with db.begin_nested():
+                stmt = insert(Article).values(row).on_conflict_do_nothing(index_elements=["url"])
+                db.execute(stmt)
+
+            processed_count += 1
+            job.processed_items = processed_count
+            _update_progress(db, job)
+
+        _update_progress(db, job, force=True)
+
+        _touch_job(db, job)
         cluster_recent(db, threshold=threshold, time_window_days=window_days)
+        _touch_job(db, job)
         score_clusters(db)
         db.commit()
 
-        job_store.finish_job(
-            job_id,
-            "completed",
-            inserted=inserted,
-            skipped=attempted - inserted,
-            cluster_similarity_threshold=threshold,
-            cluster_time_window_days=window_days,
-            message="Ingestion complete.",
-        )
-    except IntegrityError:
+        _mark_job_complete(db, job)
+    except Exception:
         db.rollback()
-        job_store.finish_job(
-            job_id,
-            "failed",
-            error="Integrity error while ingesting articles. Please retry after resolving duplicates.",
-            message="Ingestion failed.",
-        )
-    except Exception as exc:
-        db.rollback()
-        job_store.finish_job(
-            job_id,
-            "failed",
-            error=str(exc),
-            message="Ingestion failed.",
-        )
+        job = db.get(IngestionJob, job_id)
+        if job:
+            _mark_job_failed(db, job)
     finally:
+        _release_worker_advisory_lock(lock_conn)
         db.close()
 
 
-@router.get("/ingest/settings", response_model=IngestSettings)
+@router.get("/admin/ingest/settings", response_model=IngestSettings)
 def ingest_settings(db: Session = Depends(get_db)):
     prefs = ensure_preferences(db)
     return IngestSettings(
@@ -206,7 +306,7 @@ def ingest_settings(db: Session = Depends(get_db)):
     )
 
 
-@router.post("/ingest")
+@router.post("/admin/ingest", response_model=IngestionJobStartResponse)
 def ingest(payload: IngestRequest | None = None, db: Session = Depends(get_db)):
     prefs = ensure_preferences(db)
     threshold = payload.cluster_similarity_threshold if payload and payload.cluster_similarity_threshold is not None else prefs.cluster_similarity_threshold
@@ -216,23 +316,93 @@ def ingest(payload: IngestRequest | None = None, db: Session = Depends(get_db)):
     prefs.cluster_time_window_days = window_days
     db.commit()
 
-    job_id, already_running = job_store.start_job(threshold=threshold, window_days=window_days)
-    if not already_running:
-        Thread(target=run_ingestion_job, args=(job_id, threshold, window_days), daemon=True).start()
-    return IngestionJobStartResponse(job_id=job_id, status="running", already_running=already_running)
+    with _ingest_lock:
+        running_job = _get_running_job(db)
+        if running_job:
+            recovered = _recover_orphaned_running_job(db, running_job)
+            if not recovered:
+                return IngestionJobStartResponse(job_id=str(running_job.id), status="RUNNING", already_running=True)
+
+        now = datetime.now(timezone.utc)
+        job = IngestionJob(
+            id=uuid4(),
+            status="RUNNING",
+            total_items=0,
+            processed_items=0,
+            progress_percent=0,
+            started_at=now,
+            updated_at=now,
+        )
+        db.add(job)
+        db.commit()
+
+    try:
+        Thread(target=run_ingestion_job, args=(job.id, threshold, window_days), daemon=True).start()
+    except Exception as exc:
+        failed_job = db.get(IngestionJob, job.id)
+        if failed_job:
+            failed_job.status = "FAILED"
+            failed_job.updated_at = datetime.now(timezone.utc)
+            db.commit()
+        raise HTTPException(status_code=500, detail="Failed to start ingestion worker") from exc
+
+    return IngestionJobStartResponse(job_id=str(job.id), status="RUNNING", already_running=False)
 
 
-@router.get("/ingest/status/current", response_model=IngestionJobStatus | None)
-def ingest_status_current():
-    job = job_store.get_current_running_job()
+@router.get("/admin/ingest/status/current", response_model=IngestionJobStatus | None)
+def ingest_status_current(db: Session = Depends(get_db)):
+    job = _get_running_job(db)
+    job = _recover_if_stale_running_job(db, job)
     if not job:
         return None
-    return IngestionJobStatus(**job)
+    return _as_status(job)
 
 
-@router.get("/ingest/status/{job_id}", response_model=IngestionJobStatus)
-def ingest_status(job_id: str):
-    job = job_store.get_job(job_id)
+@router.get("/admin/ingest/status/{job_id}", response_model=IngestionJobStatus)
+def ingest_status(job_id: str, db: Session = Depends(get_db)):
+    try:
+        parsed_id = UUID(job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Ingestion job not found") from exc
+
+    job = db.get(IngestionJob, parsed_id)
     if not job:
         raise HTTPException(status_code=404, detail="Ingestion job not found")
-    return IngestionJobStatus(**job)
+
+    recovered_job = _recover_if_stale_running_job(db, job)
+    if recovered_job is None:
+        job = db.get(IngestionJob, parsed_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Ingestion job not found")
+    else:
+        job = recovered_job
+
+    return _as_status(job)
+
+
+@router.get("/api/ingestion/status")
+def api_ingestion_status(db: Session = Depends(get_db)):
+    job = db.query(IngestionJob).order_by(IngestionJob.started_at.desc()).first()
+    if job and job.status == "RUNNING":
+        recovered_job = _recover_if_stale_running_job(db, job)
+        if recovered_job is None:
+            job = db.query(IngestionJob).order_by(IngestionJob.started_at.desc()).first()
+        else:
+            job = recovered_job
+
+    if not job:
+        return {
+            "status": "COMPLETED",
+            "total_items": 0,
+            "processed_items": 0,
+            "progress_percent": 100,
+            "eta_seconds": None,
+        }
+
+    return {
+        "status": job.status,
+        "total_items": job.total_items,
+        "processed_items": job.processed_items,
+        "progress_percent": job.progress_percent,
+        "eta_seconds": _calculate_eta_seconds(job),
+    }

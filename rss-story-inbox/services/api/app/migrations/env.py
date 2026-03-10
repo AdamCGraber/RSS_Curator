@@ -12,6 +12,7 @@ from app.models.profile import Profile  # noqa: F401
 from app.models.summary import Summary  # noqa: F401
 from app.models.user_preference import UserPreference  # noqa: F401
 from app.models.sources_state import SourcesVersion, SourcesCache  # noqa: F401
+from app.models.ingestion_job import IngestionJob  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:
