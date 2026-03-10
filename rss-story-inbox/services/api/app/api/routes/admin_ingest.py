@@ -218,17 +218,13 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
 
         processed_count = 0
         for row in discovered_rows:
-            try:
-                with db.begin_nested():
-                    stmt = insert(Article).values(row).on_conflict_do_nothing(index_elements=["url"])
-                    db.execute(stmt)
-            except Exception:
-                # Continue processing; this item is still counted as processed.
-                pass
-            finally:
-                processed_count += 1
-                job.processed_items = processed_count
-                _update_progress(db, job)
+            with db.begin_nested():
+                stmt = insert(Article).values(row).on_conflict_do_nothing(index_elements=["url"])
+                db.execute(stmt)
+
+            processed_count += 1
+            job.processed_items = processed_count
+            _update_progress(db, job)
 
         _update_progress(db, job, force=True)
 
