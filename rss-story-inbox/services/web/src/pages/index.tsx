@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiGet, apiPost } from "../lib/api";
 import { Cluster } from "../lib/types";
 import StoryCard from "../components/StoryCard";
@@ -6,24 +6,20 @@ import ActionButtons from "../components/ActionButtons";
 
 type IngestionJob = {
   job_id: string;
-  status: "running" | "completed" | "failed";
+  status: "RUNNING" | "COMPLETED" | "FAILED" | "PAUSED";
   started_at: string;
-  completed_at?: string | null;
-  inserted?: number | null;
-  skipped?: number | null;
-  cluster_similarity_threshold?: number | null;
-  cluster_time_window_days?: number | null;
-  error?: string | null;
-  message?: string | null;
+  updated_at: string;
+  total_items: number;
+  processed_items: number;
+  progress_percent: number;
+  eta_seconds?: number | null;
 };
 
 type IngestionJobStartResponse = {
   job_id: string;
-  status: "running";
+  status: "RUNNING";
   already_running?: boolean;
 };
-
-const STALLED_SECONDS = 90;
 
 export default function QueuePage() {
   const [c, setC] = useState<Cluster | null>(null);
@@ -33,23 +29,16 @@ export default function QueuePage() {
   const [timeWindowDays, setTimeWindowDays] = useState<number>(2);
   const [ingestionJob, setIngestionJob] = useState<IngestionJob | null>(null);
   const [ingestionModalOpen, setIngestionModalOpen] = useState<boolean>(false);
-  const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
 
   const modalRef = useRef<HTMLDivElement | null>(null);
-  const startTimestampRef = useRef<number | null>(null);
+  const running = ingestionJob?.status === "RUNNING";
 
-  const running = ingestionJob?.status === "running";
-
-  const elapsedLabel = useMemo(() => {
-    const minutes = Math.floor(elapsedSeconds / 60);
-    const seconds = elapsedSeconds % 60;
-    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-  }, [elapsedSeconds]);
-
-  const runningMessage =
-    elapsedSeconds > STALLED_SECONDS
-      ? "Ingestion is taking longer than expected, but is still running."
-      : "Ingestion is running in the background.";
+  function formatETA(seconds?: number | null) {
+    if (seconds === null || seconds === undefined) return "Calculating...";
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    return `${minutes}m ${remainingSeconds}s`;
+  }
 
   function parseError(e: any) {
     const message = e?.message || String(e);
@@ -73,17 +62,15 @@ export default function QueuePage() {
   }
 
   async function handleTerminalIngestionStatus(status: IngestionJob) {
-    if (status.status === "completed") {
-      console.info("ingestion_completed", { job_id: status.job_id, completed_at: status.completed_at });
-      setNotice(
-        `Ingestion complete: ${status.inserted ?? 0} inserted, ${status.skipped ?? 0} skipped. Refreshing queue...`
-      );
+    if (status.status === "COMPLETED") {
+      console.info("ingestion_completed", { job_id: status.job_id, updated_at: status.updated_at });
+      setNotice("Ingestion complete. Refreshing queue...");
       await load({ clearNotice: false });
       return;
     }
 
-    if (status.status === "failed") {
-      console.info("ingestion_failed", { job_id: status.job_id, error: status.error });
+    if (status.status === "FAILED") {
+      console.info("ingestion_failed", { job_id: status.job_id });
       setIngestionModalOpen(true);
     }
   }
@@ -130,11 +117,11 @@ export default function QueuePage() {
       if (!latest) return;
 
       setIngestionJob(latest);
-      if (latest.status === "running" && openModalWhenRunning) {
+      if (latest.status === "RUNNING" && openModalWhenRunning) {
         setIngestionModalOpen(true);
       }
 
-      if (latest.status !== "running") {
+      if (latest.status !== "RUNNING") {
         await handleTerminalIngestionStatus(latest);
       }
     } catch {
@@ -167,30 +154,35 @@ export default function QueuePage() {
       });
     } catch (e: any) {
       const message = parseError(e);
-      const completedAt = new Date().toISOString();
       setIngestionJob({
         job_id: "sync-ingest",
-        status: "failed",
-        started_at: completedAt,
-        completed_at: completedAt,
-        error: message,
-        message: "Ingestion failed.",
+        status: "FAILED",
+        started_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        total_items: 0,
+        processed_items: 0,
+        progress_percent: 0,
+        eta_seconds: null,
       });
+      setErr(message);
       setIngestionModalOpen(true);
       return;
     }
 
-    if (jobStart.status !== "running" || !jobStart.job_id) {
+    if (jobStart.status !== "RUNNING" || !jobStart.job_id) {
       setErr("Ingestion start returned an invalid response.");
       return;
     }
 
-    const startedAt = new Date().toISOString();
     setIngestionJob({
       job_id: jobStart.job_id,
-      status: "running",
-      started_at: startedAt,
-      message: "Ingestion running…",
+      status: "RUNNING",
+      started_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      total_items: 0,
+      processed_items: 0,
+      progress_percent: 0,
+      eta_seconds: null,
     });
 
     void syncCurrentIngestionStatus({
@@ -200,40 +192,7 @@ export default function QueuePage() {
   }
 
   async function retryIngestion() {
-    setErr("");
-    setNotice("");
-    setIngestionModalOpen(true);
-
-    let jobStart: IngestionJobStartResponse;
-    try {
-      jobStart = await apiPost("/admin/ingest", {
-        cluster_similarity_threshold: thresholdPct / 100,
-        cluster_time_window_days: timeWindowDays,
-      });
-    } catch (e: any) {
-      setErr(parseError(e));
-      return;
-    }
-
-    if (jobStart.status !== "running" || !jobStart.job_id) {
-      setErr("Ingestion start returned an invalid response.");
-      return;
-    }
-
-    const startedAt = new Date().toISOString();
-    setIngestionJob({
-      job_id: jobStart.job_id,
-      status: "running",
-      started_at: startedAt,
-      message: "Ingestion running…",
-    });
-
-    if (jobStart.already_running) {
-      void syncCurrentIngestionStatus({
-        jobId: jobStart.job_id,
-        openModalWhenRunning: true,
-      });
-    }
+    await startIngestion();
   }
 
   async function handleRefreshQueueFromModal() {
@@ -254,27 +213,6 @@ export default function QueuePage() {
       ]);
     })();
   }, []);
-
-  useEffect(() => {
-    if (!ingestionJob || !running) {
-      startTimestampRef.current = null;
-      setElapsedSeconds(0);
-      return;
-    }
-
-    const startedMs = new Date(ingestionJob.started_at).getTime();
-    startTimestampRef.current = Number.isNaN(startedMs) ? Date.now() : startedMs;
-
-    const update = () => {
-      const base = startTimestampRef.current;
-      if (!base) return setElapsedSeconds(0);
-      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - base) / 1000)));
-    };
-
-    update();
-    const timer = window.setInterval(update, 1000);
-    return () => window.clearInterval(timer);
-  }, [ingestionJob?.job_id, ingestionJob?.started_at, running]);
 
   useEffect(() => {
     if (!running || !ingestionJob?.job_id) return;
@@ -329,15 +267,13 @@ export default function QueuePage() {
       <h1 style={{ marginTop: 0 }}>Queue</h1>
       <p>Review one story at a time. Keep / Reject / Defer.</p>
 
-      {running && (
+      {running && ingestionJob && (
         <div
           role="status"
           aria-live="polite"
           style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 10,
+            display: "grid",
+            gap: 8,
             marginBottom: 12,
             border: "1px solid #c7d2fe",
             borderRadius: 8,
@@ -345,7 +281,27 @@ export default function QueuePage() {
             padding: "10px 12px",
           }}
         >
-          <span aria-label="Ingestion in progress">⏳ Ingestion running… ({elapsedLabel})</span>
+          <span aria-label="Ingestion in progress">⏳ Ingestion running…</span>
+          <div
+            style={{
+              height: 10,
+              borderRadius: 999,
+              overflow: "hidden",
+              background: "#dbeafe",
+            }}
+          >
+            <div
+              style={{
+                width: `${Math.min(100, Math.max(0, ingestionJob.progress_percent || 0))}%`,
+                height: "100%",
+                background: "#4f46e5",
+                transition: "width 0.5s ease",
+              }}
+            />
+          </div>
+          <span>
+            {Math.round(ingestionJob.progress_percent || 0)}% · {ingestionJob.processed_items} / {ingestionJob.total_items}
+          </span>
         </div>
       )}
 
@@ -435,45 +391,39 @@ export default function QueuePage() {
             }}
           >
             <h2 id="ingest-modal-title" style={{ marginTop: 0 }}>
-              {running
-                ? "Ingestion running…"
-                : ingestionJob.status === "completed"
-                  ? "Ingestion complete."
-                  : "Ingestion failed."}
+              {running ? "Ingestion running…" : ingestionJob.status === "COMPLETED" ? "Ingestion complete." : "Ingestion failed."}
             </h2>
 
             <p id="ingest-modal-desc" style={{ marginTop: 0 }} aria-live="polite">
               {running
-                ? runningMessage
-                : ingestionJob.status === "completed"
+                ? "Ingestion is running in the background."
+                : ingestionJob.status === "COMPLETED"
                   ? "Queue is ready to refresh with newly processed items."
                   : "We could not complete ingestion. Review the error and retry."}
             </p>
 
             {running && (
               <>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                  <span aria-label="Ingestion in progress">⏳</span>
-                  <span>Elapsed time: {elapsedLabel}</span>
-                </div>
-                <div
-                  aria-hidden="true"
-                  style={{
-                    height: 8,
-                    borderRadius: 999,
-                    background: "#e5e7eb",
-                    overflow: "hidden",
-                    marginBottom: 16,
-                  }}
-                >
+                <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+                  <div>Status: {ingestionJob.status}</div>
                   <div
-                    style={{
-                      width: "35%",
-                      height: "100%",
-                      background: "#4f46e5",
-                      animation: "pulse 1.2s ease-in-out infinite",
-                    }}
-                  />
+                    aria-hidden="true"
+                    style={{ height: 16, borderRadius: 8, background: "#eee", overflow: "hidden" }}
+                  >
+                    <div
+                      style={{
+                        height: "100%",
+                        background: "#4caf50",
+                        transition: "width 0.5s ease",
+                        width: `${Math.min(100, Math.max(0, ingestionJob.progress_percent || 0))}%`,
+                      }}
+                    />
+                  </div>
+                  <div>{Math.round(ingestionJob.progress_percent || 0)}%</div>
+                  <div>
+                    {ingestionJob.processed_items} / {ingestionJob.total_items} items processed
+                  </div>
+                  <div>ETA: {formatETA(ingestionJob.eta_seconds)} remaining</div>
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={() => setIngestionModalOpen(false)}>Run in background</button>
@@ -481,10 +431,10 @@ export default function QueuePage() {
               </>
             )}
 
-            {ingestionJob.status === "completed" && (
+            {ingestionJob.status === "COMPLETED" && (
               <div style={{ display: "grid", gap: 6 }}>
                 <p style={{ marginBottom: 0 }}>
-                  Inserted: {ingestionJob.inserted ?? 0}; Skipped: {ingestionJob.skipped ?? 0}
+                  {ingestionJob.processed_items} / {ingestionJob.total_items} items processed
                 </p>
                 <div>
                   <button onClick={handleRefreshQueueFromModal}>Refresh Queue</button>
@@ -495,11 +445,9 @@ export default function QueuePage() {
               </div>
             )}
 
-            {ingestionJob.status === "failed" && (
+            {ingestionJob.status === "FAILED" && (
               <div>
-                <p style={{ color: "crimson", marginBottom: 6 }}>
-                  {ingestionJob.error || "Ingestion failed unexpectedly."}
-                </p>
+                <p style={{ color: "crimson", marginBottom: 6 }}>Ingestion failed unexpectedly.</p>
                 <details>
                   <summary>Details</summary>
                   <pre
