@@ -13,10 +13,12 @@ from app.core.db import SessionLocal, engine, get_db
 from app.models.article import Article
 from app.models.ingestion_job import IngestionJob
 from app.models.user_preference import UserPreference
+from app.models.profile import Profile
 from app.services.cluster.clusterer import cluster_recent
 from app.services.ingest.fetch_rss import fetch_feed
 from app.services.rank.scorer import score_clusters
 from app.services.sources_state import get_active_sources_snapshot
+from app.services.filtering.terms import parse_terms, should_keep_article
 
 router = APIRouter(tags=["admin"])
 
@@ -245,6 +247,10 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
         snapshot = get_active_sources_snapshot(db)
         sources = snapshot.get("sources", [])
 
+        profile = db.query(Profile).order_by(Profile.id.asc()).first()
+        include_terms = parse_terms(profile.include_terms if profile else None)
+        exclude_terms = parse_terms(profile.exclude_terms if profile else None)
+
         discovered_rows: list[dict] = []
         for source in sources:
             _touch_job(db, job)
@@ -253,14 +259,23 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
                 url = item.get("url")
                 if not url:
                     continue
+                title = (item.get("title") or "")[:512]
+                raw_excerpt = item.get("summary") or None
+                keep_article = should_keep_article(
+                    title=title,
+                    excerpt=raw_excerpt,
+                    include_terms=include_terms,
+                    exclude_terms=exclude_terms,
+                )
+
                 discovered_rows.append(
                     {
                         "source_id": source["id"],
                         "url": url,
-                        "title": (item.get("title") or "")[:512],
-                        "raw_excerpt": item.get("summary") or None,
+                        "title": title,
+                        "raw_excerpt": raw_excerpt,
                         "published_at": item.get("published_at"),
-                        "status": "INBOX",
+                        "status": "INBOX" if keep_article else "REJECTED",
                     }
                 )
 
