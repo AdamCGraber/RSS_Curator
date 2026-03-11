@@ -338,25 +338,47 @@ export default function QueuePage() {
           Only articles published within this window will be compared as the same story.
         </p>
 
+      </div>
+
+      <div
+        style={{
+          position: "sticky",
+          top: 12,
+          zIndex: 20,
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          flexWrap: "wrap",
+          background: "#fff",
+          border: "1px solid #e5e7eb",
+          borderRadius: 8,
+          padding: "10px 12px",
+          marginBottom: 16,
+        }}
+      >
         <button onClick={startIngestion}>Start ingestion</button>
-        <button onClick={() => load({ clearNotice: true })} style={{ marginLeft: 8 }}>
-          Refresh
-        </button>
+        <button onClick={() => load({ clearNotice: true })}>Refresh</button>
+        <div
+          style={{
+            width: 1,
+            alignSelf: "stretch",
+            background: "#e5e7eb",
+            margin: "0 2px",
+          }}
+          aria-hidden="true"
+        />
+        <ActionButtons
+          onKeep={() => act("keep")}
+          onReject={() => act("reject")}
+          onDefer={() => act("defer")}
+          disabled={!c}
+        />
       </div>
 
       {notice && <p style={{ color: "seagreen" }}>{notice}</p>}
       {err && <p style={{ color: "crimson" }}>{err}</p>}
       {!c && !err && <p>No items in queue. Add sources in Profile, then ingest.</p>}
-      {c && (
-        <>
-          <StoryCard c={c} />
-          <ActionButtons
-            onKeep={() => act("keep")}
-            onReject={() => act("reject")}
-            onDefer={() => act("defer")}
-          />
-        </>
-      )}
+      {c && <StoryCard c={c} />}
 
       {ingestionModalOpen && ingestionJob && (
         <div
