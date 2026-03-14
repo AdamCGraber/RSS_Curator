@@ -110,7 +110,11 @@ export default function QuickKeyModule({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(quickKeys));
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(quickKeys));
+    } catch {
+      // ignore localStorage write failures (private mode, blocked storage, quota, etc.)
+    }
   }, [quickKeys]);
 
   function handleResetDefaults() {
