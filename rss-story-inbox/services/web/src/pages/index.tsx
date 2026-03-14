@@ -343,7 +343,7 @@ export default function QueuePage() {
 
       <QuickKeyModule
         onAction={(action) => act(action)}
-        disabled={!c}
+        disabled={!c || ingestionModalOpen}
       />
 
       <div
