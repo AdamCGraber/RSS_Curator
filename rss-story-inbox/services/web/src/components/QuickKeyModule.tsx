@@ -113,6 +113,11 @@ export default function QuickKeyModule({
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(quickKeys));
   }, [quickKeys]);
 
+  function handleResetDefaults() {
+    setQuickKeys(DEFAULT_QUICK_KEYS);
+    setCaptureError("");
+  }
+
   const actionByComboKey = useMemo(() => {
     const map = new Map<string, QueueAction>();
     (Object.keys(quickKeys) as QueueAction[]).forEach((action) => {
@@ -228,7 +233,7 @@ export default function QuickKeyModule({
     <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12, marginBottom: 12 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
         <b>Quick keys</b>
-        <button onClick={() => { setQuickKeys(DEFAULT_QUICK_KEYS); setCaptureError(""); }} type="button">
+        <button onClick={handleResetDefaults} type="button">
           Reset defaults
         </button>
       </div>
