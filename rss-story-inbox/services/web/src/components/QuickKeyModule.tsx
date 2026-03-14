@@ -71,6 +71,22 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 }
 
+function getConflictingAction(
+  quickKeys: QuickKeyConfig,
+  action: QueueAction,
+  combo: string[]
+): QueueAction | null {
+  const comboKey = combo.join("+");
+  const actions = Object.keys(quickKeys) as QueueAction[];
+  for (const candidate of actions) {
+    if (candidate === action) continue;
+    if (quickKeys[candidate].join("+") === comboKey) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
 export default function QuickKeyModule({
   onAction,
   disabled,
@@ -81,6 +97,7 @@ export default function QuickKeyModule({
   const [quickKeys, setQuickKeys] = useState<QuickKeyConfig>(DEFAULT_QUICK_KEYS);
   const [captureAction, setCaptureAction] = useState<QueueAction | null>(null);
   const [capturePreview, setCapturePreview] = useState<string[]>([]);
+  const [captureError, setCaptureError] = useState<string>("");
 
   const pressedRef = useRef<Set<string>>(new Set());
   const capturePressedRef = useRef<Set<string>>(new Set());
@@ -100,8 +117,11 @@ export default function QuickKeyModule({
     const map = new Map<string, QueueAction>();
     (Object.keys(quickKeys) as QueueAction[]).forEach((action) => {
       const combo = quickKeys[action];
-      if (combo.length) {
-        map.set(combo.join("+"), action);
+      if (!combo.length) return;
+
+      const comboKey = combo.join("+");
+      if (!map.has(comboKey)) {
+        map.set(comboKey, action);
       }
     });
     return map;
@@ -116,6 +136,7 @@ export default function QuickKeyModule({
           capturePressedRef.current.clear();
           captureCandidateRef.current = [];
           setCapturePreview([]);
+          setCaptureError("");
           setCaptureAction(null);
           return;
         }
@@ -149,10 +170,18 @@ export default function QuickKeyModule({
         capturePressedRef.current.delete(key);
         if (capturePressedRef.current.size === 0) {
           if (captureCandidateRef.current.length > 0) {
-            setQuickKeys((prev) => ({
-              ...prev,
-              [captureAction]: captureCandidateRef.current,
-            }));
+            const conflict = getConflictingAction(quickKeys, captureAction, captureCandidateRef.current);
+            if (conflict) {
+              setCaptureError(
+                `Cannot assign ${comboToLabel(captureCandidateRef.current)} to ${captureAction}: already used by ${conflict}.`
+              );
+            } else {
+              setQuickKeys((prev) => ({
+                ...prev,
+                [captureAction]: captureCandidateRef.current,
+              }));
+              setCaptureError("");
+            }
           }
           setCapturePreview([]);
           captureCandidateRef.current = [];
@@ -174,19 +203,20 @@ export default function QuickKeyModule({
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [actionByComboKey, captureAction, disabled, onAction]);
+  }, [actionByComboKey, captureAction, disabled, onAction, quickKeys]);
 
   return (
     <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12, marginBottom: 12 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
         <b>Quick keys</b>
-        <button onClick={() => setQuickKeys(DEFAULT_QUICK_KEYS)} type="button">
+        <button onClick={() => { setQuickKeys(DEFAULT_QUICK_KEYS); setCaptureError(""); }} type="button">
           Reset defaults
         </button>
       </div>
       <p style={{ margin: "8px 0 10px", color: "#555" }}>
         Assign 1–3 keys per action. Press keys together when recording.
       </p>
+      {captureError && <p style={{ margin: "0 0 10px", color: "crimson" }}>{captureError}</p>}
       {(Object.keys(quickKeys) as QueueAction[]).map((action) => {
         const isCapturing = captureAction === action;
         const shownCombo = isCapturing && capturePreview.length > 0 ? capturePreview : quickKeys[action];
@@ -200,6 +230,7 @@ export default function QuickKeyModule({
                 capturePressedRef.current.clear();
                 captureCandidateRef.current = [];
                 setCapturePreview([]);
+                setCaptureError("");
                 setCaptureAction(isCapturing ? null : action);
               }}
             >
