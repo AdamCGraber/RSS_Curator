@@ -128,6 +128,11 @@ export default function QuickKeyModule({
   }, [quickKeys]);
 
   useEffect(() => {
+    const resetShortcutState = () => {
+      pressedRef.current.clear();
+      actionLockRef.current = false;
+    };
+
     const onKeyDown = (event: KeyboardEvent) => {
       const key = normalizeKey(event.key);
 
@@ -196,12 +201,26 @@ export default function QuickKeyModule({
       }
     };
 
+    const onWindowBlur = () => {
+      resetShortcutState();
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") {
+        resetShortcutState();
+      }
+    };
+
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onWindowBlur);
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onWindowBlur);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [actionByComboKey, captureAction, disabled, onAction, quickKeys]);
 
