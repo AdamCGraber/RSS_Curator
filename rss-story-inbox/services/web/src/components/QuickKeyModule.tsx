@@ -162,7 +162,10 @@ export default function QuickKeyModule({
       if (disabled || isTypingTarget(event.target)) return;
 
       pressedRef.current.add(key);
-      if (actionLockRef.current) return;
+      if (actionLockRef.current) {
+        event.preventDefault();
+        return;
+      }
 
       const combo = normalizeCombo(Array.from(pressedRef.current));
       const action = actionByComboKey.get(combo.join("+"));
