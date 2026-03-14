@@ -3,6 +3,7 @@ import { apiGet, apiPost } from "../lib/api";
 import { Cluster } from "../lib/types";
 import StoryCard from "../components/StoryCard";
 import ActionButtons from "../components/ActionButtons";
+import QuickKeyModule from "../components/QuickKeyModule";
 
 type IngestionJob = {
   job_id: string;
@@ -339,6 +340,11 @@ export default function QueuePage() {
         </p>
 
       </div>
+
+      <QuickKeyModule
+        onAction={(action) => act(action)}
+        disabled={!c}
+      />
 
       <div
         style={{
