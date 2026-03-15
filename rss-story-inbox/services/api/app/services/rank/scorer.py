@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+from sqlalchemy.orm import selectinload
+
 from app.models.cluster import Cluster
 from app.models.profile import Profile
 from app.services.filtering.terms import parse_terms, score_article_relevance
@@ -13,7 +15,7 @@ def score_clusters(db) -> None:
 
     now = datetime.now(timezone.utc)
 
-    clusters = db.query(Cluster).all()
+    clusters = db.query(Cluster).options(selectinload(Cluster.articles)).all()
     for c in clusters:
         coverage = float(c.coverage_count or 1)
         recency_boost = 0.0
