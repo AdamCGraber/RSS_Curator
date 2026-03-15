@@ -1,6 +1,6 @@
 import unittest
 
-from app.services.filtering.terms import parse_terms, should_keep_article
+from app.services.filtering.terms import parse_terms, score_article_relevance, should_keep_article
 
 
 class FilteringTermsTests(unittest.TestCase):
@@ -46,6 +46,33 @@ class FilteringTermsTests(unittest.TestCase):
                 exclude_terms=[],
             )
         )
+
+    def test_article_relevance_weights_title_more_than_excerpt(self):
+        title_score = score_article_relevance(
+            title="AI policy update",
+            excerpt="",
+            content="",
+            include_terms=["ai"],
+            exclude_terms=[],
+        )
+        excerpt_score = score_article_relevance(
+            title="",
+            excerpt="AI policy update",
+            content="",
+            include_terms=["ai"],
+            exclude_terms=[],
+        )
+        self.assertGreater(title_score, excerpt_score)
+
+    def test_article_relevance_applies_exclude_penalty(self):
+        score = score_article_relevance(
+            title="AI policy update",
+            excerpt="sports conflict",
+            content="",
+            include_terms=["ai"],
+            exclude_terms=["sports"],
+        )
+        self.assertLess(score, 0.5)
 
 
 if __name__ == "__main__":
