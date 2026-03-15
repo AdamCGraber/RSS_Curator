@@ -117,6 +117,14 @@ export default function QuickKeyModule({
     }
   }, [quickKeys]);
 
+  useEffect(() => {
+    if (!disabled) return;
+    capturePressedRef.current.clear();
+    captureCandidateRef.current = [];
+    setCapturePreview([]);
+    setCaptureAction(null);
+  }, [disabled]);
+
   function handleResetDefaults() {
     setQuickKeys(DEFAULT_QUICK_KEYS);
     setCaptureError("");
@@ -137,21 +145,33 @@ export default function QuickKeyModule({
   }, [quickKeys]);
 
   useEffect(() => {
+    const resetCaptureState = () => {
+      capturePressedRef.current.clear();
+      captureCandidateRef.current = [];
+      setCapturePreview([]);
+      setCaptureAction(null);
+    };
+
     const resetShortcutState = () => {
       pressedRef.current.clear();
       actionLockRef.current = false;
+      resetCaptureState();
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
       const key = normalizeKey(event.key);
 
+      if (disabled) {
+        if (captureAction) {
+          resetCaptureState();
+        }
+        return;
+      }
+
       if (captureAction) {
         if (key === "esc") {
-          capturePressedRef.current.clear();
-          captureCandidateRef.current = [];
-          setCapturePreview([]);
+          resetCaptureState();
           setCaptureError("");
-          setCaptureAction(null);
           return;
         }
 
@@ -163,7 +183,7 @@ export default function QuickKeyModule({
         return;
       }
 
-      if (disabled || isTypingTarget(event.target)) return;
+      if (isTypingTarget(event.target)) return;
 
       pressedRef.current.add(key);
       if (actionLockRef.current) {
