@@ -1,11 +1,58 @@
 from __future__ import annotations
 
+TITLE_WEIGHT = 3.0
+SUMMARY_WEIGHT = 2.0
+CONTENT_WEIGHT = 1.0
+
 
 def parse_terms(raw_terms: str | None) -> list[str]:
     if not raw_terms:
         return []
 
     return [term.strip().lower() for term in raw_terms.split(",") if term.strip()]
+
+
+def _weighted_hits(text: str, terms: list[str], weight: float) -> float:
+    if not text or not terms:
+        return 0.0
+
+    lowered = text.lower()
+    return float(sum(weight for term in terms if term in lowered))
+
+
+def score_article_relevance(
+    title: str | None,
+    excerpt: str | None,
+    content: str | None,
+    include_terms: list[str],
+    exclude_terms: list[str],
+) -> float:
+    """Score article relevance using weighted include/exclude term matching.
+
+    Field weights:
+    - title: strong
+    - excerpt/summary: medium
+    - content/body: light
+
+    Output is approximately in range [-1.0, 1.0]. Positive means relevant.
+    """
+
+    include_raw = (
+        _weighted_hits(title or "", include_terms, TITLE_WEIGHT)
+        + _weighted_hits(excerpt or "", include_terms, SUMMARY_WEIGHT)
+        + _weighted_hits(content or "", include_terms, CONTENT_WEIGHT)
+    )
+    exclude_raw = (
+        _weighted_hits(title or "", exclude_terms, TITLE_WEIGHT)
+        + _weighted_hits(excerpt or "", exclude_terms, SUMMARY_WEIGHT)
+        + _weighted_hits(content or "", exclude_terms, CONTENT_WEIGHT)
+    )
+
+    max_field_weight = TITLE_WEIGHT + SUMMARY_WEIGHT + CONTENT_WEIGHT
+    include_norm = include_raw / (len(include_terms) * max_field_weight) if include_terms else 0.0
+    exclude_norm = exclude_raw / (len(exclude_terms) * max_field_weight) if exclude_terms else 0.0
+
+    return include_norm - exclude_norm
 
 
 def should_keep_article(
