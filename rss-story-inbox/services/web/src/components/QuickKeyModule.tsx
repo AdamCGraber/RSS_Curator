@@ -137,9 +137,17 @@ export default function QuickKeyModule({
   }, [quickKeys]);
 
   useEffect(() => {
+    const resetCaptureState = () => {
+      capturePressedRef.current.clear();
+      captureCandidateRef.current = [];
+      setCapturePreview([]);
+      setCaptureAction(null);
+    };
+
     const resetShortcutState = () => {
       pressedRef.current.clear();
       actionLockRef.current = false;
+      resetCaptureState();
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -147,11 +155,8 @@ export default function QuickKeyModule({
 
       if (captureAction) {
         if (key === "esc") {
-          capturePressedRef.current.clear();
-          captureCandidateRef.current = [];
-          setCapturePreview([]);
+          resetCaptureState();
           setCaptureError("");
-          setCaptureAction(null);
           return;
         }
 
