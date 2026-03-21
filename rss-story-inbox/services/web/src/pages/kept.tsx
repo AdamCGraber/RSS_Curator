@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import { CSSProperties } from "react";
+import { CSSProperties, useEffect, useState } from "react";
 import { apiGet, apiPost } from "../lib/api";
 import { Cluster } from "../lib/types";
 
@@ -50,7 +49,7 @@ export default function KeptPage() {
                   <a
                     href={c.canonical.url}
                     target="_blank"
-                    rel="noreferrer"
+                    rel="noopener noreferrer"
                     style={primaryUrlLinkStyle}
                   >
                     {c.canonical.url}
