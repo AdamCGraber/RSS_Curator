@@ -60,7 +60,7 @@ def list_kept(db: Session = Depends(get_db)):
         db.query(Cluster)
         .join(Article, Article.cluster_id == Cluster.id)
         .filter(Article.status == "KEPT")
-        .order_by(desc(Cluster.latest_published_at))
+        .order_by(desc(Cluster.score), desc(Cluster.latest_published_at), desc(Cluster.id))
         .all()
     )
     seen = set()

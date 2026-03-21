@@ -43,7 +43,11 @@ export default function KeptPage() {
         <ul>
           {items.map(c => (
             <li key={c.id} style={{ marginBottom: 10 }}>
-              <b>{c.cluster_title}</b> — coverage {c.coverage_count}
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                <b>{c.cluster_title}</b>
+                <span style={{ color: "#555" }}>score {c.score.toFixed(1)}</span>
+                <span>— coverage {c.coverage_count}</span>
+              </div>
               {c.canonical?.url && (
                 <div style={primaryUrlStyle}>
                   <a
