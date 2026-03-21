@@ -95,7 +95,8 @@ export default function ShortlistPage() {
                   <button onClick={async () => { setSelected(c); await loadSummary(c.id); }}>
                     Open
                   </button>{" "}
-                  <span>{c.cluster_title}</span>
+                  <span>{c.cluster_title}</span>{" "}
+                  <span style={{ color: "#555" }}>score {c.score.toFixed(1)}</span>
                   <PrimaryUrl cluster={c} />
                 </li>
               ))}
@@ -106,7 +107,9 @@ export default function ShortlistPage() {
         <div>
           {selected ? (
             <>
-              <h3 style={{ marginTop: 0, marginBottom: 0 }}>{selected.cluster_title}</h3>
+              <h3 style={{ marginTop: 0, marginBottom: 0 }}>
+                {selected.cluster_title} <span style={{ color: "#555", fontWeight: 400 }}>score {selected.score.toFixed(1)}</span>
+              </h3>
               <PrimaryUrl cluster={selected} />
               <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                 <button onClick={() => generate(selected.id)}>Generate summary</button>
