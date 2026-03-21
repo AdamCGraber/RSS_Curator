@@ -1,6 +1,18 @@
 import { useEffect, useState } from "react";
+import { CSSProperties } from "react";
 import { apiGet, apiPost } from "../lib/api";
 import { Cluster } from "../lib/types";
+
+const primaryUrlStyle: CSSProperties = {
+  marginTop: 4,
+  fontSize: 14,
+  overflowWrap: "anywhere",
+};
+
+const primaryUrlLinkStyle: CSSProperties = {
+  color: "#0a66c2",
+  textDecoration: "underline",
+};
 
 export default function KeptPage() {
   const [items, setItems] = useState<Cluster[]>([]);
@@ -33,6 +45,18 @@ export default function KeptPage() {
           {items.map(c => (
             <li key={c.id} style={{ marginBottom: 10 }}>
               <b>{c.cluster_title}</b> — coverage {c.coverage_count}
+              {c.canonical?.url && (
+                <div style={primaryUrlStyle}>
+                  <a
+                    href={c.canonical.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={primaryUrlLinkStyle}
+                  >
+                    {c.canonical.url}
+                  </a>
+                </div>
+              )}
               <div style={{ marginTop: 6 }}>
                 <button onClick={() => promote(c.id)}>Promote to Shortlist</button>
               </div>
