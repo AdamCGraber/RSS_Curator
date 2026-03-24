@@ -3,7 +3,7 @@ import { apiGet, apiPost } from "../lib/api";
 import { Cluster } from "../lib/types";
 import StoryCard from "../components/StoryCard";
 import ActionButtons from "../components/ActionButtons";
-import QuickKeyModule from "../components/QuickKeyModule";
+import QuickKeyModule, { QueueAction } from "../components/QuickKeyModule";
 
 type IngestionJob = {
   job_id: string;
@@ -24,6 +24,7 @@ type IngestionJobStartResponse = {
 
 export default function QueuePage() {
   const [c, setC] = useState<Cluster | null>(null);
+  const [previousCluster, setPreviousCluster] = useState<Cluster | null>(null);
   const [err, setErr] = useState<string>("");
   const [notice, setNotice] = useState<string>("");
   const [thresholdPct, setThresholdPct] = useState<number>(88);
@@ -85,6 +86,7 @@ export default function QueuePage() {
     try {
       const next = await apiGet("/queue/next");
       setC(next);
+      setPreviousCluster(null);
     } catch (e: any) {
       setErr(parseError(e));
     }
@@ -132,14 +134,33 @@ export default function QueuePage() {
 
   async function act(action: "keep" | "reject") {
     if (!c) return;
+    const currentCluster = c;
     setErr("");
     setNotice("");
     try {
       await apiPost(`/queue/cluster/${c.id}/action`, { action });
-      await load({ clearNotice: true });
+      const next = await apiGet("/queue/next");
+      setPreviousCluster(currentCluster);
+      setC(next);
     } catch (e: any) {
       setErr(parseError(e));
     }
+  }
+
+  function handleUndo() {
+    if (!previousCluster) return;
+    setErr("");
+    setNotice("");
+    setC(previousCluster);
+    setPreviousCluster(null);
+  }
+
+  function handleQuickAction(action: QueueAction) {
+    if (action === "undo") {
+      handleUndo();
+      return;
+    }
+    void act(action);
   }
 
   async function startIngestion() {
@@ -342,8 +363,8 @@ export default function QueuePage() {
       </div>
 
       <QuickKeyModule
-        onAction={(action) => act(action)}
-        disabled={!c || ingestionModalOpen}
+        onAction={handleQuickAction}
+        disabled={(!c && !previousCluster) || ingestionModalOpen}
       />
 
       <div
@@ -374,9 +395,11 @@ export default function QueuePage() {
           aria-hidden="true"
         />
         <ActionButtons
-          onKeep={() => act("keep")}
-          onReject={() => act("reject")}
+          onKeep={() => void act("keep")}
+          onReject={() => void act("reject")}
+          onUndo={handleUndo}
           disabled={!c}
+          undoDisabled={!previousCluster}
         />
       </div>
 
