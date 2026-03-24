@@ -146,9 +146,9 @@ export default function QueuePage() {
     setNotice("");
     try {
       const actionResult = await apiPost(`/queue/cluster/${c.id}/action`, { action }) as QueueActionResponse;
-      const next = await apiGet("/queue/next");
       setPreviousCluster(currentCluster);
       setPreviousActionArticleIds(actionResult.affected_article_ids || []);
+      const next = await apiGet("/queue/next");
       setC(next);
     } catch (e: any) {
       setErr(parseError(e));
