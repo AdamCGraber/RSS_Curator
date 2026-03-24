@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from app.core.db import get_db
@@ -80,3 +80,22 @@ def act_on_cluster(cluster_id: int, payload: ActionRequest, db: Session = Depend
             a.status = apply_action(a.status, payload.action)
     db.commit()
     return {"ok": True}
+
+
+@router.post("/cluster/{cluster_id}/undo")
+def undo_cluster_action(cluster_id: int, db: Session = Depends(get_db)):
+    members = db.query(Article).filter(Article.cluster_id == cluster_id).all()
+    if not members:
+        raise HTTPException(status_code=404, detail="Cluster not found")
+
+    reverted_count = 0
+    for a in members:
+        if a.status in {"KEPT", "REJECTED", "DEFERRED"}:
+            a.status = "INBOX"
+            reverted_count += 1
+
+    if reverted_count == 0:
+        raise HTTPException(status_code=409, detail="No reversible queue action found for cluster")
+
+    db.commit()
+    return {"ok": True, "reverted_items": reverted_count}

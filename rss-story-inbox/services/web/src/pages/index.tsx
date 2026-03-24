@@ -147,17 +147,22 @@ export default function QueuePage() {
     }
   }
 
-  function handleUndo() {
+  async function handleUndo() {
     if (!previousCluster) return;
     setErr("");
     setNotice("");
-    setC(previousCluster);
-    setPreviousCluster(null);
+    try {
+      await apiPost(`/queue/cluster/${previousCluster.id}/undo`, {});
+      setC(previousCluster);
+      setPreviousCluster(null);
+    } catch (e: any) {
+      setErr(parseError(e));
+    }
   }
 
   function handleQuickAction(action: QueueAction) {
     if (action === "undo") {
-      handleUndo();
+      void handleUndo();
       return;
     }
     void act(action);
@@ -397,7 +402,7 @@ export default function QueuePage() {
         <ActionButtons
           onKeep={() => void act("keep")}
           onReject={() => void act("reject")}
-          onUndo={handleUndo}
+          onUndo={() => void handleUndo()}
           disabled={!c}
           undoDisabled={!previousCluster}
         />
