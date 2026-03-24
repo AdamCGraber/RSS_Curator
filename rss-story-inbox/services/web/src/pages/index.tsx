@@ -22,9 +22,15 @@ type IngestionJobStartResponse = {
   already_running?: boolean;
 };
 
+type QueueActionResponse = {
+  ok: boolean;
+  affected_article_ids: number[];
+};
+
 export default function QueuePage() {
   const [c, setC] = useState<Cluster | null>(null);
   const [previousCluster, setPreviousCluster] = useState<Cluster | null>(null);
+  const [previousActionArticleIds, setPreviousActionArticleIds] = useState<number[]>([]);
   const [err, setErr] = useState<string>("");
   const [notice, setNotice] = useState<string>("");
   const [thresholdPct, setThresholdPct] = useState<number>(88);
@@ -87,6 +93,7 @@ export default function QueuePage() {
       const next = await apiGet("/queue/next");
       setC(next);
       setPreviousCluster(null);
+      setPreviousActionArticleIds([]);
     } catch (e: any) {
       setErr(parseError(e));
     }
@@ -138,9 +145,10 @@ export default function QueuePage() {
     setErr("");
     setNotice("");
     try {
-      await apiPost(`/queue/cluster/${c.id}/action`, { action });
+      const actionResult = await apiPost(`/queue/cluster/${c.id}/action`, { action }) as QueueActionResponse;
       const next = await apiGet("/queue/next");
       setPreviousCluster(currentCluster);
+      setPreviousActionArticleIds(actionResult.affected_article_ids || []);
       setC(next);
     } catch (e: any) {
       setErr(parseError(e));
@@ -148,13 +156,16 @@ export default function QueuePage() {
   }
 
   async function handleUndo() {
-    if (!previousCluster) return;
+    if (!previousCluster || previousActionArticleIds.length === 0) return;
     setErr("");
     setNotice("");
     try {
-      await apiPost(`/queue/cluster/${previousCluster.id}/undo`, {});
+      await apiPost(`/queue/cluster/${previousCluster.id}/undo`, {
+        article_ids: previousActionArticleIds,
+      });
       setC(previousCluster);
       setPreviousCluster(null);
+      setPreviousActionArticleIds([]);
     } catch (e: any) {
       setErr(parseError(e));
     }
@@ -369,7 +380,7 @@ export default function QueuePage() {
 
       <QuickKeyModule
         onAction={handleQuickAction}
-        disabled={(!c && !previousCluster) || ingestionModalOpen}
+        disabled={(!c && !(previousCluster && previousActionArticleIds.length > 0)) || ingestionModalOpen}
       />
 
       <div
@@ -404,7 +415,7 @@ export default function QueuePage() {
           onReject={() => void act("reject")}
           onUndo={() => void handleUndo()}
           disabled={!c}
-          undoDisabled={!previousCluster}
+          undoDisabled={!previousCluster || previousActionArticleIds.length === 0}
         />
       </div>
 

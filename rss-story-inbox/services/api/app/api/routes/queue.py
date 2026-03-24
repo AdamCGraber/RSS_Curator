@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from app.core.db import get_db
@@ -10,6 +11,10 @@ from app.services.workflow.transitions import apply_action
 from app.services.cluster.clusterer import similarity_score
 
 router = APIRouter(prefix="/queue", tags=["queue"])
+
+
+class UndoRequest(BaseModel):
+    article_ids: list[int]
 
 
 def _article_payload(a: Article, canonical_member: Article | None) -> ClusterArticle:
@@ -75,22 +80,34 @@ def next_cluster(db: Session = Depends(get_db)):
 @router.post("/cluster/{cluster_id}/action")
 def act_on_cluster(cluster_id: int, payload: ActionRequest, db: Session = Depends(get_db)):
     members = db.query(Article).filter(Article.cluster_id == cluster_id).all()
+    affected_article_ids: list[int] = []
     for a in members:
         if a.status == "INBOX":
             a.status = apply_action(a.status, payload.action)
+            affected_article_ids.append(a.id)
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "affected_article_ids": affected_article_ids}
 
 
 @router.post("/cluster/{cluster_id}/undo")
-def undo_cluster_action(cluster_id: int, db: Session = Depends(get_db)):
-    members = db.query(Article).filter(Article.cluster_id == cluster_id).all()
+def undo_cluster_action(cluster_id: int, payload: UndoRequest, db: Session = Depends(get_db)):
+    if not payload.article_ids:
+        raise HTTPException(status_code=400, detail="No article ids provided for undo")
+
+    members = (
+        db.query(Article)
+        .filter(
+            Article.cluster_id == cluster_id,
+            Article.id.in_(payload.article_ids),
+        )
+        .all()
+    )
     if not members:
-        raise HTTPException(status_code=404, detail="Cluster not found")
+        raise HTTPException(status_code=404, detail="No matching cluster articles found for undo")
 
     reverted_count = 0
     for a in members:
-        if a.status in {"KEPT", "REJECTED", "DEFERRED"}:
+        if a.status in {"KEPT", "REJECTED"}:
             a.status = "INBOX"
             reverted_count += 1
 
