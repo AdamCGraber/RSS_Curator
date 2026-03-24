@@ -130,7 +130,7 @@ export default function QueuePage() {
     }
   }
 
-  async function act(action: "keep" | "reject" | "defer") {
+  async function act(action: "keep" | "reject") {
     if (!c) return;
     setErr("");
     setNotice("");
@@ -266,7 +266,7 @@ export default function QueuePage() {
   return (
     <div>
       <h1 style={{ marginTop: 0 }}>Queue</h1>
-      <p>Review one story at a time. Keep / Reject / Defer.</p>
+      <p>Review one story at a time. Keep / Reject.</p>
 
       {running && ingestionJob && (
         <div
@@ -376,7 +376,6 @@ export default function QueuePage() {
         <ActionButtons
           onKeep={() => act("keep")}
           onReject={() => act("reject")}
-          onDefer={() => act("defer")}
           disabled={!c}
         />
       </div>

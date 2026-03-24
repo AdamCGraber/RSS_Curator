@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-type QueueAction = "keep" | "reject" | "defer";
+type QueueAction = "keep" | "reject";
 type QuickKeyConfig = Record<QueueAction, string[]>;
 
 const STORAGE_KEY = "queue.quickKeys.v1";
@@ -9,7 +9,6 @@ const MODIFIER_KEYS = new Set(["ctrl", "alt", "shift", "meta"]);
 const DEFAULT_QUICK_KEYS: QuickKeyConfig = {
   keep: ["k"],
   reject: ["r"],
-  defer: ["d"],
 };
 
 function normalizeKey(key: string): string {
@@ -56,7 +55,6 @@ function readStoredQuickKeys(): QuickKeyConfig {
     return {
       keep: Array.isArray(parsed.keep) ? normalizeCombo(parsed.keep).slice(0, 3) : DEFAULT_QUICK_KEYS.keep,
       reject: Array.isArray(parsed.reject) ? normalizeCombo(parsed.reject).slice(0, 3) : DEFAULT_QUICK_KEYS.reject,
-      defer: Array.isArray(parsed.defer) ? normalizeCombo(parsed.defer).slice(0, 3) : DEFAULT_QUICK_KEYS.defer,
     };
   } catch {
     return DEFAULT_QUICK_KEYS;
