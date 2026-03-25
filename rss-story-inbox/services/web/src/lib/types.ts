@@ -32,4 +32,6 @@ export type PublishedItem = {
   coverage_count: number;
   latest_published_at?: string;
   summary?: string;
+  url?: string;
+  score: number;
 };

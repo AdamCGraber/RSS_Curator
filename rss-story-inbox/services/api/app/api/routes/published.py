@@ -14,7 +14,7 @@ def list_published(db: Session = Depends(get_db)):
         db.query(Cluster)
         .join(Article, Article.cluster_id == Cluster.id)
         .filter(Article.status == "PUBLISHED")
-        .order_by(desc(Cluster.latest_published_at))
+        .order_by(desc(Cluster.score), desc(Cluster.latest_published_at))
         .all()
     )
     seen = set()
@@ -24,11 +24,20 @@ def list_published(db: Session = Depends(get_db)):
             continue
         seen.add(c.id)
         s = db.query(Summary).filter(Summary.cluster_id == c.id).first()
+        published_article = (
+            db.query(Article)
+            .filter(Article.cluster_id == c.id, Article.status == "PUBLISHED")
+            .order_by(desc(Article.published_at), desc(Article.id))
+            .first()
+        )
+        canonical_url = c.canonical_article.url if c.canonical_article else None
         out.append({
             "cluster_id": c.id,
             "title": c.cluster_title,
             "coverage_count": c.coverage_count,
             "latest_published_at": c.latest_published_at.isoformat() if c.latest_published_at else None,
-            "summary": (s.edited_text or s.draft_text) if s else None
+            "summary": (s.edited_text or s.draft_text) if s else None,
+            "url": canonical_url or (published_article.url if published_article else None),
+            "score": c.score,
         })
     return out
