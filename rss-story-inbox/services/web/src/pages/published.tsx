@@ -6,11 +6,12 @@ function formatReadableDate(value?: string) {
   if (!value) return "n/a";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
+  const formatOptions = { timeZone: "UTC" } as const;
 
-  const weekday = new Intl.DateTimeFormat("en-US", { weekday: "long" }).format(date);
-  const month = new Intl.DateTimeFormat("en-US", { month: "long" }).format(date);
-  const day = new Intl.DateTimeFormat("en-US", { day: "numeric" }).format(date);
-  const year = new Intl.DateTimeFormat("en-US", { year: "numeric" }).format(date);
+  const weekday = new Intl.DateTimeFormat("en-US", { weekday: "long", ...formatOptions }).format(date);
+  const month = new Intl.DateTimeFormat("en-US", { month: "long", ...formatOptions }).format(date);
+  const day = new Intl.DateTimeFormat("en-US", { day: "numeric", ...formatOptions }).format(date);
+  const year = new Intl.DateTimeFormat("en-US", { year: "numeric", ...formatOptions }).format(date);
   return `${weekday}, ${month}, ${day}, ${year}`;
 }
 
