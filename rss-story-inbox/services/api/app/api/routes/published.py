@@ -37,7 +37,11 @@ def list_published(db: Session = Depends(get_db)):
         s = db.query(Summary).filter(Summary.cluster_id == c.id).first()
         published_article = (
             db.query(Article)
-            .filter(Article.cluster_id == c.id, Article.status == "PUBLISHED")
+            .filter(
+                Article.cluster_id == c.id,
+                Article.status == "PUBLISHED",
+                Article.published_at.isnot(None),
+            )
             .order_by(desc(Article.published_at), desc(Article.id))
             .first()
         )
