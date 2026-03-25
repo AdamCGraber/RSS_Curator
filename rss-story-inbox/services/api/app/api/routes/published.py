@@ -6,6 +6,7 @@ from app.core.db import get_db
 from app.models.cluster import Cluster
 from app.models.article import Article
 from app.models.summary import Summary
+from app.services.workflow.transitions import remove_from_published
 
 router = APIRouter(prefix="/published", tags=["published"])
 
@@ -57,3 +58,15 @@ def list_published(db: Session = Depends(get_db)):
             "score": c.score,
         })
     return out
+
+
+@router.post("/cluster/{cluster_id}/remove")
+def remove_cluster(cluster_id: int, db: Session = Depends(get_db)):
+    members = db.query(Article).filter(Article.cluster_id == cluster_id).all()
+    changed = 0
+    for a in members:
+        if a.status == "PUBLISHED":
+            a.status = remove_from_published(a.status)
+            changed += 1
+    db.commit()
+    return {"ok": True, "changed": changed}

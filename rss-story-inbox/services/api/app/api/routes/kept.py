@@ -6,7 +6,7 @@ from app.core.db import get_db
 from app.models.article import Article
 from app.models.cluster import Cluster
 from app.schemas.cluster import ClusterArticle, ClusterOut
-from app.services.workflow.transitions import promote_to_shortlist
+from app.services.workflow.transitions import promote_to_shortlist, remove_from_kept
 
 router = APIRouter(prefix="/kept", tags=["kept"])
 
@@ -80,6 +80,18 @@ def promote_cluster(cluster_id: int, db: Session = Depends(get_db)):
     for a in members:
         if a.status == "KEPT":
             a.status = promote_to_shortlist(a.status)
+            changed += 1
+    db.commit()
+    return {"ok": True, "changed": changed}
+
+
+@router.post("/cluster/{cluster_id}/remove")
+def remove_cluster(cluster_id: int, db: Session = Depends(get_db)):
+    members = db.query(Article).filter(Article.cluster_id == cluster_id).all()
+    changed = 0
+    for a in members:
+        if a.status == "KEPT":
+            a.status = remove_from_kept(a.status)
             changed += 1
     db.commit()
     return {"ok": True, "changed": changed}

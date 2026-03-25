@@ -79,6 +79,16 @@ export default function ShortlistPage() {
     setText("");
   }
 
+  async function remove(clusterId: number) {
+    await apiPost(`/shortlist/cluster/${clusterId}/remove`);
+    await load();
+    if (selected?.id === clusterId) {
+      setSelected(null);
+      setSummaryId(null);
+      setText("");
+    }
+  }
+
   return (
     <div>
       <h1 style={{ marginTop: 0 }}>Shortlist</h1>
@@ -95,6 +105,7 @@ export default function ShortlistPage() {
                   <button onClick={async () => { setSelected(c); await loadSummary(c.id); }}>
                     Open
                   </button>{" "}
+                  <button onClick={() => remove(c.id)}>Remove</button>{" "}
                   <span>{c.cluster_title}</span>{" "}
                   <span style={{ color: "#555" }}>score {c.score.toFixed(1)}</span>
                   <PrimaryUrl cluster={c} />

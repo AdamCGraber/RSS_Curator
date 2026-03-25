@@ -7,7 +7,7 @@ from app.models.cluster import Cluster
 from app.models.summary import Summary
 from app.models.profile import Profile
 from app.schemas.cluster import ClusterOut, ClusterArticle
-from app.services.workflow.transitions import mark_published
+from app.services.workflow.transitions import mark_published, remove_from_shortlist
 from app.services.ingest.extract_content import extract_article_text
 from app.services.ai.summarizer import generate_summary
 from app.core.config import settings
@@ -137,6 +137,18 @@ def publish(cluster_id: int, db: Session = Depends(get_db)):
     for a in members:
         if a.status == "SHORTLIST":
             a.status = mark_published(a.status)
+            changed += 1
+    db.commit()
+    return {"ok": True, "changed": changed}
+
+
+@router.post("/cluster/{cluster_id}/remove")
+def remove_cluster(cluster_id: int, db: Session = Depends(get_db)):
+    members = db.query(Article).filter(Article.cluster_id == cluster_id).all()
+    changed = 0
+    for a in members:
+        if a.status == "SHORTLIST":
+            a.status = remove_from_shortlist(a.status)
             changed += 1
     db.commit()
     return {"ok": True, "changed": changed}

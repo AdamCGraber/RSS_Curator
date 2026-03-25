@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { apiGet } from "../lib/api";
+import { apiGet, apiPost } from "../lib/api";
 import { PublishedItem } from "../lib/types";
 
 function formatReadableDate(value?: string) {
@@ -44,6 +44,11 @@ export default function PublishedPage() {
 
   useEffect(() => { load(); }, []);
 
+  async function remove(clusterId: number) {
+    await apiPost(`/published/cluster/${clusterId}/remove`);
+    await load();
+  }
+
   return (
     <div>
       <h1 style={{ marginTop: 0 }}>Published</h1>
@@ -56,7 +61,10 @@ export default function PublishedPage() {
             const safeUrl = toSafeHttpUrl(it.url);
             return (
               <div key={it.cluster_id} style={{ border: "1px solid #ddd", borderRadius: 8, padding: 12, marginBottom: 12 }}>
-                <h3 style={{ marginTop: 0 }}>{it.title}</h3>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                  <h3 style={{ marginTop: 0, marginBottom: 0 }}>{it.title}</h3>
+                  <button onClick={() => remove(it.cluster_id)}>Remove</button>
+                </div>
                 <div style={{ color: "#555", marginBottom: 8 }}>
                   Coverage: {it.coverage_count}
                 </div>
