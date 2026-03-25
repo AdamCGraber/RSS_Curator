@@ -1,4 +1,4 @@
-import { CSSProperties, useEffect, useState } from "react";
+import { CSSProperties, useEffect, useRef, useState } from "react";
 import { apiGet, apiPost, apiPut } from "../lib/api";
 import { Cluster } from "../lib/types";
 import SummaryEditor from "../components/SummaryEditor";
@@ -37,6 +37,17 @@ export default function ShortlistPage() {
   const [summaryId, setSummaryId] = useState<number | null>(null);
   const [text, setText] = useState("");
   const [err, setErr] = useState("");
+  const selectedIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    selectedIdRef.current = selected?.id ?? null;
+  }, [selected]);
+
+  function clearEditorSelection() {
+    setSelected(null);
+    setSummaryId(null);
+    setText("");
+  }
 
   async function load() {
     setErr("");
@@ -74,18 +85,14 @@ export default function ShortlistPage() {
   async function publish(clusterId: number) {
     await apiPost(`/shortlist/cluster/${clusterId}/publish`);
     await load();
-    setSelected(null);
-    setSummaryId(null);
-    setText("");
+    clearEditorSelection();
   }
 
   async function remove(clusterId: number) {
     await apiPost(`/shortlist/cluster/${clusterId}/remove`);
     await load();
-    if (selected?.id === clusterId) {
-      setSelected(null);
-      setSummaryId(null);
-      setText("");
+    if (selectedIdRef.current === clusterId) {
+      clearEditorSelection();
     }
   }
 
