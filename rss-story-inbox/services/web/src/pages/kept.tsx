@@ -33,6 +33,11 @@ export default function KeptPage() {
     await load();
   }
 
+  async function remove(id: number) {
+    await apiPost(`/kept/cluster/${id}/remove`);
+    await load();
+  }
+
   return (
     <div>
       <h1 style={{ marginTop: 0 }}>Kept</h1>
@@ -62,6 +67,8 @@ export default function KeptPage() {
               )}
               <div style={{ marginTop: 6 }}>
                 <button onClick={() => promote(c.id)}>Promote to Shortlist</button>
+                {" "}
+                <button onClick={() => remove(c.id)}>Remove</button>
               </div>
             </li>
           ))}

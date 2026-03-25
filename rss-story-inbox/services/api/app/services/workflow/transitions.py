@@ -17,3 +17,18 @@ def mark_published(current: str) -> str:
     if current != "SHORTLIST":
         raise ValueError("Only SHORTLIST can be published")
     return "PUBLISHED"
+
+def remove_from_kept(current: str) -> str:
+    if current != "KEPT":
+        raise ValueError("Only KEPT can be removed")
+    return "REJECTED"
+
+def remove_from_shortlist(current: str) -> str:
+    if current != "SHORTLIST":
+        raise ValueError("Only SHORTLIST can be removed")
+    return "REJECTED"
+
+def remove_from_published(current: str) -> str:
+    if current != "PUBLISHED":
+        raise ValueError("Only PUBLISHED can be removed")
+    return "REJECTED"
