@@ -163,12 +163,17 @@ export default function QueuePage() {
       setPreviousActionArticleIds(actionResult.affected_article_ids || []);
       const next = await apiGet("/queue/next");
       setC(next);
-      setArticlesToReview((prev) => {
-        if (prev === null) return null;
-        const hasAffectedItems = (actionResult.affected_article_ids || []).length > 0;
-        if (!hasAffectedItems) return prev;
-        return Math.max(0, prev - 1);
-      });
+      try {
+        const count = await (apiGet("/queue/count") as Promise<QueueCountResponse>);
+        setArticlesToReview(count.articles_to_review ?? 0);
+      } catch {
+        setArticlesToReview((prev) => {
+          if (prev === null) return null;
+          const hasAffectedItems = (actionResult.affected_article_ids || []).length > 0;
+          if (!hasAffectedItems) return prev;
+          return Math.max(0, prev - 1);
+        });
+      }
     } catch (e: any) {
       setErr(parseError(e));
     }
@@ -183,7 +188,12 @@ export default function QueuePage() {
         article_ids: previousActionArticleIds,
       });
       setC(previousCluster);
-      setArticlesToReview((prev) => (prev === null ? null : prev + 1));
+      try {
+        const count = await (apiGet("/queue/count") as Promise<QueueCountResponse>);
+        setArticlesToReview(count.articles_to_review ?? 0);
+      } catch {
+        setArticlesToReview((prev) => (prev === null ? null : prev + 1));
+      }
       setPreviousCluster(null);
       setPreviousActionArticleIds([]);
     } catch (e: any) {
