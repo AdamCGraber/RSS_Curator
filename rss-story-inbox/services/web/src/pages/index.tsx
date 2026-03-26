@@ -27,8 +27,13 @@ type QueueActionResponse = {
   affected_article_ids: number[];
 };
 
+type QueueCountResponse = {
+  articles_to_review: number;
+};
+
 export default function QueuePage() {
   const [c, setC] = useState<Cluster | null>(null);
+  const [articlesToReview, setArticlesToReview] = useState<number | null>(null);
   const [previousCluster, setPreviousCluster] = useState<Cluster | null>(null);
   const [previousActionArticleIds, setPreviousActionArticleIds] = useState<number[]>([]);
   const [err, setErr] = useState<string>("");
@@ -94,6 +99,14 @@ export default function QueuePage() {
       setC(next);
       setPreviousCluster(null);
       setPreviousActionArticleIds([]);
+
+      try {
+        const count = await (apiGet("/queue/count") as Promise<QueueCountResponse>);
+        setArticlesToReview(count.articles_to_review ?? 0);
+      } catch {
+        // Keep queue review flow available even if count endpoint is unavailable.
+        setArticlesToReview(null);
+      }
     } catch (e: any) {
       setErr(parseError(e));
     }
@@ -150,6 +163,17 @@ export default function QueuePage() {
       setPreviousActionArticleIds(actionResult.affected_article_ids || []);
       const next = await apiGet("/queue/next");
       setC(next);
+      try {
+        const count = await (apiGet("/queue/count") as Promise<QueueCountResponse>);
+        setArticlesToReview(count.articles_to_review ?? 0);
+      } catch {
+        setArticlesToReview((prev) => {
+          if (prev === null) return null;
+          const hasAffectedItems = (actionResult.affected_article_ids || []).length > 0;
+          if (!hasAffectedItems) return prev;
+          return Math.max(0, prev - 1);
+        });
+      }
     } catch (e: any) {
       setErr(parseError(e));
     }
@@ -164,6 +188,12 @@ export default function QueuePage() {
         article_ids: previousActionArticleIds,
       });
       setC(previousCluster);
+      try {
+        const count = await (apiGet("/queue/count") as Promise<QueueCountResponse>);
+        setArticlesToReview(count.articles_to_review ?? 0);
+      } catch {
+        setArticlesToReview((prev) => (prev === null ? null : prev + 1));
+      }
       setPreviousCluster(null);
       setPreviousActionArticleIds([]);
     } catch (e: any) {
@@ -416,6 +446,7 @@ export default function QueuePage() {
           onUndo={() => void handleUndo()}
           disabled={!c}
           undoDisabled={!previousCluster || previousActionArticleIds.length === 0}
+          articlesToReview={articlesToReview}
         />
       </div>
 

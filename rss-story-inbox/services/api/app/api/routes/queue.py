@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from app.core.db import get_db
 from app.models.cluster import Cluster
 from app.models.article import Article
@@ -75,6 +75,16 @@ def next_cluster(db: Session = Depends(get_db)):
     if not c:
         return None
     return cluster_payload(db, c)
+
+
+@router.get("/count")
+def queue_count(db: Session = Depends(get_db)):
+    qualified_cluster_count = (
+        db.query(func.count(func.distinct(Article.cluster_id)))
+        .filter(Article.status == "INBOX")
+        .scalar()
+    ) or 0
+    return {"articles_to_review": qualified_cluster_count}
 
 
 @router.post("/cluster/{cluster_id}/action")
