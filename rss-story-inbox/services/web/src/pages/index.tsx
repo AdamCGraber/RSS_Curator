@@ -163,7 +163,12 @@ export default function QueuePage() {
       setPreviousActionArticleIds(actionResult.affected_article_ids || []);
       const next = await apiGet("/queue/next");
       setC(next);
-      setArticlesToReview((prev) => (prev === null ? null : Math.max(0, prev - 1)));
+      setArticlesToReview((prev) => {
+        if (prev === null) return null;
+        const hasAffectedItems = (actionResult.affected_article_ids || []).length > 0;
+        if (!hasAffectedItems) return prev;
+        return Math.max(0, prev - 1);
+      });
     } catch (e: any) {
       setErr(parseError(e));
     }
