@@ -8,25 +8,30 @@ def apply_action(current: str, action: str) -> str:
         return "DEFERRED"
     raise ValueError("Invalid action")
 
+
 def promote_to_shortlist(current: str) -> str:
     if current != "KEPT":
         raise ValueError("Only KEPT can be promoted")
     return "SHORTLIST"
 
-def mark_published(current: str) -> str:
-    if current != "SHORTLIST":
-        raise ValueError("Only SHORTLIST can be published")
-    return "PUBLISHED"
 
 def remove_from_kept(current: str) -> str:
     if current != "KEPT":
         raise ValueError("Only KEPT can be removed")
     return "REJECTED"
 
+
+def mark_published(current: str) -> str:
+    if current != "SHORTLIST":
+        raise ValueError("Only SHORTLIST can be published")
+    return "PUBLISHED"
+
+
 def remove_from_shortlist(current: str) -> str:
     if current != "SHORTLIST":
         raise ValueError("Only SHORTLIST can be removed")
     return "REJECTED"
+
 
 def remove_from_published(current: str) -> str:
     if current != "PUBLISHED":
