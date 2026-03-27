@@ -14,6 +14,7 @@ export type Cluster = {
   latest_published_at?: string;
   score: number;
   why: string;
+  qualifying_terms: string[];
   canonical?: ClusterArticle;
   coverage: ClusterArticle[];
 };

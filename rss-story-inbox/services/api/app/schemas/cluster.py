@@ -19,5 +19,6 @@ class ClusterOut(BaseModel):
     latest_published_at: Optional[datetime] = None
     score: float
     why: str
+    qualifying_terms: List[str] = []
     canonical: Optional[ClusterArticle] = None
     coverage: List[ClusterArticle] = []

@@ -12,6 +12,27 @@ def parse_terms(raw_terms: str | None) -> list[str]:
     return [term.strip().lower() for term in raw_terms.split(",") if term.strip()]
 
 
+def find_matching_terms(texts: list[str | None], terms: list[str]) -> list[str]:
+    if not texts or not terms:
+        return []
+
+    searchable = " ".join(text for text in texts if text).lower()
+    if not searchable:
+        return []
+
+    seen: set[str] = set()
+    matched: list[str] = []
+    for term in terms:
+        normalized = term.strip().lower()
+        if not normalized or normalized in seen:
+            continue
+        if normalized in searchable:
+            matched.append(normalized)
+            seen.add(normalized)
+
+    return matched
+
+
 def _weighted_hits(text: str, terms: list[str], weight: float) -> float:
     if not text or not terms:
         return 0.0
