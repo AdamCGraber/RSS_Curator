@@ -55,13 +55,14 @@ def cluster_payload(db: Session, c: Cluster) -> ClusterOut:
 
     profile = db.query(Profile).order_by(Profile.id.asc()).first()
     include_terms = parse_terms(profile.include_terms if profile else None)
+    include_terms_2 = parse_terms(profile.include_terms_2 if profile else None)
     qualifying_terms = find_matching_terms(
         [
             text
             for m in members
             for text in (m.title, m.raw_excerpt, m.content_text)
         ],
-        include_terms,
+        [*include_terms, *include_terms_2],
     )
 
     return ClusterOut(

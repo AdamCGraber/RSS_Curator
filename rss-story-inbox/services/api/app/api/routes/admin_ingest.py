@@ -249,6 +249,7 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
 
         profile = db.query(Profile).order_by(Profile.id.asc()).first()
         include_terms = parse_terms(profile.include_terms if profile else None)
+        include_terms_2 = parse_terms(profile.include_terms_2 if profile else None)
         exclude_terms = parse_terms(profile.exclude_terms if profile else None)
 
         discovered_rows: list[dict] = []
@@ -265,6 +266,7 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
                     title=title,
                     excerpt=raw_excerpt,
                     include_terms=include_terms,
+                    include_terms_2=include_terms_2,
                     exclude_terms=exclude_terms,
                 )
 

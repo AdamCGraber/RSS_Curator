@@ -24,6 +24,7 @@ export type Profile = {
   audience_text: string;
   tone_text: string;
   include_terms: string;
+  include_terms_2: string;
   exclude_terms: string;
 };
 

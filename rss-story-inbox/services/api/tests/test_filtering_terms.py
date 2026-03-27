@@ -18,6 +18,7 @@ class FilteringTermsTests(unittest.TestCase):
                 title="AI regulation update",
                 excerpt="",
                 include_terms=["ai"],
+                include_terms_2=[],
                 exclude_terms=["sports"],
             )
         )
@@ -28,6 +29,7 @@ class FilteringTermsTests(unittest.TestCase):
                 title="Sports roundup",
                 excerpt="",
                 include_terms=[],
+                include_terms_2=[],
                 exclude_terms=["sports"],
             )
         )
@@ -38,6 +40,7 @@ class FilteringTermsTests(unittest.TestCase):
                 title="AI in sports analytics",
                 excerpt="",
                 include_terms=["ai"],
+                include_terms_2=[],
                 exclude_terms=["sports"],
             )
         )
@@ -48,6 +51,27 @@ class FilteringTermsTests(unittest.TestCase):
                 title="Markets today",
                 excerpt="",
                 include_terms=["ai"],
+                include_terms_2=[],
+                exclude_terms=[],
+            )
+        )
+
+    def test_include_terms_and_mode_when_secondary_include_terms_present(self):
+        self.assertTrue(
+            should_keep_article(
+                title="AI policy for chip startups",
+                excerpt="",
+                include_terms=["ai"],
+                include_terms_2=["chip"],
+                exclude_terms=[],
+            )
+        )
+        self.assertFalse(
+            should_keep_article(
+                title="AI policy update",
+                excerpt="",
+                include_terms=["ai"],
+                include_terms_2=["chip"],
                 exclude_terms=[],
             )
         )
@@ -58,6 +82,7 @@ class FilteringTermsTests(unittest.TestCase):
             excerpt="",
             content="",
             include_terms=["ai"],
+            include_terms_2=[],
             exclude_terms=[],
         )
         excerpt_score = score_article_relevance(
@@ -65,6 +90,7 @@ class FilteringTermsTests(unittest.TestCase):
             excerpt="AI policy update",
             content="",
             include_terms=["ai"],
+            include_terms_2=[],
             exclude_terms=[],
         )
         self.assertGreater(title_score, excerpt_score)
@@ -75,9 +101,29 @@ class FilteringTermsTests(unittest.TestCase):
             excerpt="sports conflict",
             content="",
             include_terms=["ai"],
+            include_terms_2=[],
             exclude_terms=["sports"],
         )
         self.assertLess(score, 0.5)
+
+    def test_article_relevance_scores_secondary_include_terms_same_as_primary(self):
+        primary = score_article_relevance(
+            title="AI policy update",
+            excerpt="",
+            content="",
+            include_terms=["ai"],
+            include_terms_2=[],
+            exclude_terms=[],
+        )
+        secondary = score_article_relevance(
+            title="AI policy update",
+            excerpt="",
+            content="",
+            include_terms=[],
+            include_terms_2=["ai"],
+            exclude_terms=[],
+        )
+        self.assertEqual(primary, secondary)
 
     def test_find_matching_terms_returns_include_terms_present_in_text(self):
         matched = find_matching_terms(
