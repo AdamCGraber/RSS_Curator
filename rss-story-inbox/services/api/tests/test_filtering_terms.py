@@ -56,7 +56,7 @@ class FilteringTermsTests(unittest.TestCase):
             )
         )
 
-    def test_secondary_include_terms_restrict_when_primary_is_empty(self):
+    def test_secondary_include_terms_do_not_qualify_when_primary_is_empty(self):
         self.assertFalse(
             should_keep_article(
                 title="Markets today",
@@ -66,7 +66,7 @@ class FilteringTermsTests(unittest.TestCase):
                 exclude_terms=[],
             )
         )
-        self.assertTrue(
+        self.assertFalse(
             should_keep_article(
                 title="AI markets today",
                 excerpt="",

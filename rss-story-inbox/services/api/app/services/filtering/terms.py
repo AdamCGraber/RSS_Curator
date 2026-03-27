@@ -92,6 +92,7 @@ def should_keep_article(
     - If include terms are configured, article is kept only when include matching rules pass.
     - When both include lists are configured, one term from each list must match.
     - When only the first include list is configured, any term from it may match.
+    - The second include list never qualifies an article by itself.
     - Exclude terms remove articles unless there is an include match.
     - Include matches always override exclude matches.
     """
@@ -109,7 +110,7 @@ def should_keep_article(
         return include_hit
 
     if include_terms_2:
-        return include_hit_2
+        return False
 
     if exclude_hit:
         return False
