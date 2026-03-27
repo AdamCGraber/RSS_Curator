@@ -1,6 +1,11 @@
 import unittest
 
-from app.services.filtering.terms import parse_terms, score_article_relevance, should_keep_article
+from app.services.filtering.terms import (
+    find_matching_terms,
+    parse_terms,
+    score_article_relevance,
+    should_keep_article,
+)
 
 
 class FilteringTermsTests(unittest.TestCase):
@@ -73,6 +78,20 @@ class FilteringTermsTests(unittest.TestCase):
             exclude_terms=["sports"],
         )
         self.assertLess(score, 0.5)
+
+    def test_find_matching_terms_returns_include_terms_present_in_text(self):
+        matched = find_matching_terms(
+            texts=["AI policy update", "Markets and Space startups"],
+            terms=["ai", "space", "healthcare"],
+        )
+        self.assertEqual(matched, ["ai", "space"])
+
+    def test_find_matching_terms_deduplicates_and_normalizes(self):
+        matched = find_matching_terms(
+            texts=["Policy updates on AI safety and governance"],
+            terms=["AI", " ai ", "safety"],
+        )
+        self.assertEqual(matched, ["ai", "safety"])
 
 
 if __name__ == "__main__":

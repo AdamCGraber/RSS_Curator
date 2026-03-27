@@ -5,10 +5,12 @@ from sqlalchemy import desc, func
 from app.core.db import get_db
 from app.models.cluster import Cluster
 from app.models.article import Article
+from app.models.profile import Profile
 from app.schemas.common import ActionRequest
 from app.schemas.cluster import ClusterOut, ClusterArticle
 from app.services.workflow.transitions import apply_action
 from app.services.cluster.clusterer import similarity_score
+from app.services.filtering.terms import find_matching_terms, parse_terms
 
 router = APIRouter(prefix="/queue", tags=["queue"])
 
@@ -51,6 +53,17 @@ def cluster_payload(db: Session, c: Cluster) -> ClusterOut:
     if c.latest_published_at:
         why += f"; latest {c.latest_published_at.isoformat()}"
 
+    profile = db.query(Profile).order_by(Profile.id.asc()).first()
+    include_terms = parse_terms(profile.include_terms if profile else None)
+    qualifying_terms = find_matching_terms(
+        [
+            text
+            for m in members
+            for text in (m.title, m.raw_excerpt, m.content_text)
+        ],
+        include_terms,
+    )
+
     return ClusterOut(
         id=c.id,
         cluster_title=c.cluster_title,
@@ -58,6 +71,7 @@ def cluster_payload(db: Session, c: Cluster) -> ClusterOut:
         latest_published_at=c.latest_published_at,
         score=c.score,
         why=why,
+        qualifying_terms=qualifying_terms,
         canonical=canonical,
         coverage=coverage,
     )

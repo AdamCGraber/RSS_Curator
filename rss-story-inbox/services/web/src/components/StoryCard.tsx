@@ -16,6 +16,10 @@ export default function StoryCard({ c }: { c: Cluster }) {
         </div>
       </div>
       <p style={{ marginTop: 8, color: "#444" }}>{c.why}</p>
+      <p style={{ marginTop: 4, color: "#444" }}>
+        <b>Qualifying Terms:</b>{" "}
+        {c.qualifying_terms && c.qualifying_terms.length > 0 ? c.qualifying_terms.join(", ") : "None"}
+      </p>
 
       {c.canonical && (
         <p style={{ marginTop: 8 }}>
