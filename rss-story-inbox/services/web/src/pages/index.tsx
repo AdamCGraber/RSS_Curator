@@ -91,8 +91,8 @@ export default function QueuePage() {
     }
   }
 
-  async function refreshQueueCount(options?: { showWarning?: boolean }) {
-    const { showWarning = true } = options ?? {};
+  async function refreshQueueCount(options?: { showWarning?: boolean; reopenDismissedWarning?: boolean }) {
+    const { showWarning = true, reopenDismissedWarning = false } = options ?? {};
     try {
       const count = await (apiGet("/queue/count") as Promise<QueueCountResponse>);
       setArticlesToReview(count.articles_to_review ?? 0);
@@ -104,7 +104,7 @@ export default function QueuePage() {
       if (showWarning) {
         const detail = parseError(e);
         setCountWarning(`Could not load queue count (${detail}).`);
-        setCountWarningDismissed(false);
+        setCountWarningDismissed((wasDismissed) => (reopenDismissedWarning ? false : wasDismissed));
       }
       return false;
     }
@@ -204,7 +204,7 @@ export default function QueuePage() {
   async function handleRetryCount() {
     setCountRetryLoading(true);
     try {
-      await refreshQueueCount({ showWarning: true });
+      await refreshQueueCount({ showWarning: true, reopenDismissedWarning: true });
     } finally {
       setCountRetryLoading(false);
     }
