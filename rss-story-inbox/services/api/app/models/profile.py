@@ -8,5 +8,6 @@ class Profile(Base):
     audience_text: Mapped[str] = mapped_column(Text)
     tone_text: Mapped[str] = mapped_column(Text)
     include_terms: Mapped[str] = mapped_column(Text, default="")
+    include_terms_2: Mapped[str] = mapped_column(Text, default="")
     exclude_terms: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now())

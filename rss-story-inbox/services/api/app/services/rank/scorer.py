@@ -11,10 +11,11 @@ from app.services.rank.relevance import cluster_relevance_from_articles
 def score_clusters(db) -> None:
     profile = db.query(Profile).order_by(Profile.id.asc()).first()
     include_terms = parse_terms(profile.include_terms if profile else None)
+    include_terms_2 = parse_terms(profile.include_terms_2 if profile else None)
     exclude_terms = parse_terms(profile.exclude_terms if profile else None)
 
     now = datetime.now(timezone.utc)
-    has_term_filters = bool(include_terms or exclude_terms)
+    has_term_filters = bool(include_terms or include_terms_2 or exclude_terms)
 
     clusters_query = db.query(Cluster)
     if has_term_filters:
@@ -35,6 +36,7 @@ def score_clusters(db) -> None:
                     excerpt=a.raw_excerpt,
                     content=a.content_text,
                     include_terms=include_terms,
+                    include_terms_2=include_terms_2,
                     exclude_terms=exclude_terms,
                 )
                 for a in c.articles

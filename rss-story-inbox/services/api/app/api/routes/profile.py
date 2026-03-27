@@ -15,6 +15,7 @@ def ensure_profile(db: Session) -> Profile:
         audience_text=settings.default_audience,
         tone_text=settings.default_tone,
         include_terms=settings.default_include_terms,
+        include_terms_2="",
         exclude_terms=settings.default_exclude_terms,
     )
     db.add(p)
@@ -32,6 +33,7 @@ def update_profile(payload: ProfileUpdate, db: Session = Depends(get_db)):
     p.audience_text = payload.audience_text
     p.tone_text = payload.tone_text
     p.include_terms = payload.include_terms
+    p.include_terms_2 = payload.include_terms_2
     p.exclude_terms = payload.exclude_terms
     db.commit()
     db.refresh(p)

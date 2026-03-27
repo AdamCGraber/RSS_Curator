@@ -46,6 +46,7 @@ def score_article_relevance(
     excerpt: str | None,
     content: str | None,
     include_terms: list[str],
+    include_terms_2: list[str],
     exclude_terms: list[str],
 ) -> float:
     """Score article relevance using weighted include/exclude term matching.
@@ -58,10 +59,12 @@ def score_article_relevance(
     Output is approximately in range [-1.0, 1.0]. Positive means relevant.
     """
 
+    all_include_terms = [*include_terms, *include_terms_2]
+
     include_raw = (
-        _weighted_hits(title or "", include_terms, TITLE_WEIGHT)
-        + _weighted_hits(excerpt or "", include_terms, SUMMARY_WEIGHT)
-        + _weighted_hits(content or "", include_terms, CONTENT_WEIGHT)
+        _weighted_hits(title or "", all_include_terms, TITLE_WEIGHT)
+        + _weighted_hits(excerpt or "", all_include_terms, SUMMARY_WEIGHT)
+        + _weighted_hits(content or "", all_include_terms, CONTENT_WEIGHT)
     )
     exclude_raw = (
         _weighted_hits(title or "", exclude_terms, TITLE_WEIGHT)
@@ -70,7 +73,7 @@ def score_article_relevance(
     )
 
     max_field_weight = TITLE_WEIGHT + SUMMARY_WEIGHT + CONTENT_WEIGHT
-    include_norm = include_raw / (len(include_terms) * max_field_weight) if include_terms else 0.0
+    include_norm = include_raw / (len(all_include_terms) * max_field_weight) if all_include_terms else 0.0
     exclude_norm = exclude_raw / (len(exclude_terms) * max_field_weight) if exclude_terms else 0.0
 
     return include_norm - exclude_norm
@@ -80,12 +83,15 @@ def should_keep_article(
     title: str | None,
     excerpt: str | None,
     include_terms: list[str],
+    include_terms_2: list[str],
     exclude_terms: list[str],
 ) -> bool:
     """Return True when an article should remain in INBOX.
 
     Rules:
-    - If include terms are configured, article is kept only when at least one include term matches.
+    - If include terms are configured, article is kept only when include matching rules pass.
+    - When both include lists are configured, one term from each list must match.
+    - When only the first include list is configured, any term from it may match.
     - Exclude terms remove articles unless there is an include match.
     - Include matches always override exclude matches.
     """
@@ -93,10 +99,17 @@ def should_keep_article(
     searchable = f"{title or ''} {excerpt or ''}".lower()
 
     include_hit = any(term in searchable for term in include_terms)
+    include_hit_2 = any(term in searchable for term in include_terms_2)
     exclude_hit = any(term in searchable for term in exclude_terms)
+
+    if include_terms and include_terms_2:
+        return include_hit and include_hit_2
 
     if include_terms:
         return include_hit
+
+    if include_terms_2:
+        return include_hit_2
 
     if exclude_hit:
         return False

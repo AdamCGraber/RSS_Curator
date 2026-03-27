@@ -43,6 +43,7 @@ export default function ProfilePage() {
       audience_text: p.audience_text,
       tone_text: p.tone_text,
       include_terms: p.include_terms,
+      include_terms_2: p.include_terms_2,
       exclude_terms: p.exclude_terms
     });
     setP(updated);
@@ -166,6 +167,14 @@ export default function ProfilePage() {
               <input
                 value={p.include_terms}
                 onChange={(e) => setP({ ...p, include_terms: e.target.value })}
+                style={{ width: "100%" }}
+              />
+            </div>
+            <div>
+              <b>Include terms 2 (comma-separated, AND with Include terms)</b>
+              <input
+                value={p.include_terms_2}
+                onChange={(e) => setP({ ...p, include_terms_2: e.target.value })}
                 style={{ width: "100%" }}
               />
             </div>
