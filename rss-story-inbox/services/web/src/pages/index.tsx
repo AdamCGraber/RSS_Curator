@@ -34,6 +34,9 @@ type QueueCountResponse = {
 export default function QueuePage() {
   const [c, setC] = useState<Cluster | null>(null);
   const [articlesToReview, setArticlesToReview] = useState<number | null>(null);
+  const [countWarning, setCountWarning] = useState<string>("");
+  const [countWarningDismissed, setCountWarningDismissed] = useState<boolean>(false);
+  const [countRetryLoading, setCountRetryLoading] = useState<boolean>(false);
   const [previousCluster, setPreviousCluster] = useState<Cluster | null>(null);
   const [previousActionArticleIds, setPreviousActionArticleIds] = useState<number[]>([]);
   const [err, setErr] = useState<string>("");
@@ -88,6 +91,25 @@ export default function QueuePage() {
     }
   }
 
+  async function refreshQueueCount(options?: { showWarning?: boolean; reopenDismissedWarning?: boolean }) {
+    const { showWarning = true, reopenDismissedWarning = false } = options ?? {};
+    try {
+      const count = await (apiGet("/queue/count") as Promise<QueueCountResponse>);
+      setArticlesToReview(count.articles_to_review ?? 0);
+      setCountWarning("");
+      setCountWarningDismissed(false);
+      return true;
+    } catch (e: any) {
+      setArticlesToReview(null);
+      if (showWarning) {
+        const detail = parseError(e);
+        setCountWarning(`Could not load queue count (${detail}).`);
+        setCountWarningDismissed((wasDismissed) => (reopenDismissedWarning ? false : wasDismissed));
+      }
+      return false;
+    }
+  }
+
   async function load(options?: { clearNotice?: boolean }) {
     const { clearNotice = false } = options ?? {};
     setErr("");
@@ -99,14 +121,7 @@ export default function QueuePage() {
       setC(next);
       setPreviousCluster(null);
       setPreviousActionArticleIds([]);
-
-      try {
-        const count = await (apiGet("/queue/count") as Promise<QueueCountResponse>);
-        setArticlesToReview(count.articles_to_review ?? 0);
-      } catch {
-        // Keep queue review flow available even if count endpoint is unavailable.
-        setArticlesToReview(null);
-      }
+      await refreshQueueCount({ showWarning: true });
     } catch (e: any) {
       setErr(parseError(e));
     }
@@ -163,17 +178,7 @@ export default function QueuePage() {
       setPreviousActionArticleIds(actionResult.affected_article_ids || []);
       const next = await apiGet("/queue/next");
       setC(next);
-      try {
-        const count = await (apiGet("/queue/count") as Promise<QueueCountResponse>);
-        setArticlesToReview(count.articles_to_review ?? 0);
-      } catch {
-        setArticlesToReview((prev) => {
-          if (prev === null) return null;
-          const hasAffectedItems = (actionResult.affected_article_ids || []).length > 0;
-          if (!hasAffectedItems) return prev;
-          return Math.max(0, prev - 1);
-        });
-      }
+      await refreshQueueCount({ showWarning: true });
     } catch (e: any) {
       setErr(parseError(e));
     }
@@ -188,17 +193,25 @@ export default function QueuePage() {
         article_ids: previousActionArticleIds,
       });
       setC(previousCluster);
-      try {
-        const count = await (apiGet("/queue/count") as Promise<QueueCountResponse>);
-        setArticlesToReview(count.articles_to_review ?? 0);
-      } catch {
-        setArticlesToReview((prev) => (prev === null ? null : prev + 1));
-      }
+      await refreshQueueCount({ showWarning: true });
       setPreviousCluster(null);
       setPreviousActionArticleIds([]);
     } catch (e: any) {
       setErr(parseError(e));
     }
+  }
+
+  async function handleRetryCount() {
+    setCountRetryLoading(true);
+    try {
+      await refreshQueueCount({ showWarning: true, reopenDismissedWarning: true });
+    } finally {
+      setCountRetryLoading(false);
+    }
+  }
+
+  function handleDismissCountWarning() {
+    setCountWarningDismissed(true);
   }
 
   function handleQuickAction(action: QueueAction) {
@@ -451,6 +464,32 @@ export default function QueuePage() {
       </div>
 
       {notice && <p style={{ color: "seagreen" }}>{notice}</p>}
+      {countWarning && !countWarningDismissed && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+            border: "1px solid #f59e0b",
+            borderRadius: 8,
+            background: "#fffbeb",
+            color: "#92400e",
+            padding: "10px 12px",
+            marginBottom: 10,
+          }}
+        >
+          <span>{countWarning} You can keep reviewing while count is unavailable.</span>
+          <button onClick={() => void handleRetryCount()} disabled={countRetryLoading}>
+            {countRetryLoading ? "Retrying..." : "Retry count"}
+          </button>
+          <button onClick={handleDismissCountWarning} disabled={countRetryLoading}>
+            Cancel
+          </button>
+        </div>
+      )}
       {err && <p style={{ color: "crimson" }}>{err}</p>}
       {!c && !err && <p>No items in queue. Add sources in Profile, then ingest.</p>}
       {c && <StoryCard c={c} />}
