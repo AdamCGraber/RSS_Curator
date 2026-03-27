@@ -108,6 +108,9 @@ def should_keep_article(
     if include_terms:
         return include_hit
 
+    if include_terms_2:
+        return include_hit_2
+
     if exclude_hit:
         return False
 
