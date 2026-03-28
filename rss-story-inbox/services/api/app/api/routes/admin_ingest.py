@@ -196,6 +196,24 @@ def _set_phase_progress(
         db.commit()
 
 
+def _count_distinct_clusters_for_urls(db: Session, urls: list[str], chunk_size: int = 500) -> int:
+    if not urls:
+        return 0
+
+    cluster_ids: set[int] = set()
+    for i in range(0, len(urls), chunk_size):
+        chunk = urls[i : i + chunk_size]
+        rows = (
+            db.query(Article.cluster_id)
+            .filter(Article.url.in_(chunk), Article.cluster_id.is_not(None))
+            .distinct()
+            .all()
+        )
+        cluster_ids.update(int(cluster_id) for (cluster_id,) in rows if cluster_id is not None)
+
+    return len(cluster_ids)
+
+
 def _recover_orphaned_running_job(db: Session, job: IngestionJob) -> bool:
     """Mark stale RUNNING jobs as FAILED so ingestion can be restarted.
 
@@ -313,6 +331,7 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
             processed_items=discovered_feed_count,
         )
 
+        run_urls = list(dict.fromkeys(str(row["url"]) for row in discovered_rows if row.get("url")))
         _set_phase_progress(
             db,
             job,
@@ -348,7 +367,7 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
 
         _set_phase_progress(db, job, phase=INGESTION_PHASES[2], progress_percent=40)
         cluster_recent(db, threshold=threshold, time_window_days=window_days)
-        cluster_count = db.query(Article.cluster_id).filter(Article.cluster_id.is_not(None)).distinct().count()
+        cluster_count = _count_distinct_clusters_for_urls(db, run_urls)
         _set_phase_progress(
             db,
             job,
@@ -359,7 +378,7 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
 
         _set_phase_progress(db, job, phase=INGESTION_PHASES[3], progress_percent=60)
         score_clusters(db)
-        scored_clusters = db.query(Article.cluster_id).filter(Article.cluster_id.is_not(None)).distinct().count()
+        scored_clusters = _count_distinct_clusters_for_urls(db, run_urls)
         _set_phase_progress(
             db,
             job,
