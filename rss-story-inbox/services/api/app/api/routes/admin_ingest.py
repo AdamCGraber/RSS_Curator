@@ -174,11 +174,12 @@ def _set_phase_progress(
     phase: str,
     progress_percent: int,
     processed_items: int = 0,
-    total_items: int = 0,
+    total_items: int | None = None,
 ):
     _set_runtime_phase(job.id, phase)
     job.processed_items = max(0, processed_items)
-    job.total_items = max(0, total_items)
+    if total_items is not None:
+        job.total_items = max(0, total_items)
     job.progress_percent = max(0, min(100, progress_percent))
     job.updated_at = datetime.now(timezone.utc)
     db.commit()
@@ -227,11 +228,11 @@ def _mark_job_failed(db: Session, job: IngestionJob):
     db.commit()
 
 
-def _mark_job_complete(db: Session, job: IngestionJob):
+def _mark_job_complete(db: Session, job: IngestionJob, imported_items_count: int):
     db.refresh(job)
     _set_runtime_phase(job.id, INGESTION_PHASES[-1])
-    job.processed_items = 0
-    job.total_items = 0
+    job.total_items = max(0, imported_items_count)
+    job.processed_items = max(0, imported_items_count)
     job.progress_percent = 100
     job.status = "COMPLETED"
     job.updated_at = datetime.now(timezone.utc)
@@ -302,7 +303,13 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
             processed_items=discovered_feed_count,
         )
 
-        _set_phase_progress(db, job, phase=INGESTION_PHASES[1], progress_percent=20)
+        _set_phase_progress(
+            db,
+            job,
+            phase=INGESTION_PHASES[1],
+            progress_percent=20,
+            total_items=len(discovered_rows),
+        )
         processed_count = 0
         for row in discovered_rows:
             with db.begin_nested():
@@ -316,6 +323,7 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
                 phase=INGESTION_PHASES[1],
                 progress_percent=20,
                 processed_items=processed_count,
+                total_items=len(discovered_rows),
             )
 
         _set_phase_progress(
@@ -324,6 +332,7 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
             phase=INGESTION_PHASES[1],
             progress_percent=40,
             processed_items=processed_count,
+            total_items=len(discovered_rows),
         )
 
         _set_phase_progress(db, job, phase=INGESTION_PHASES[2], progress_percent=40)
@@ -351,7 +360,7 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
         _set_phase_progress(db, job, phase=INGESTION_PHASES[4], progress_percent=80)
         db.commit()
 
-        _mark_job_complete(db, job)
+        _mark_job_complete(db, job, imported_items_count=processed_count)
     except Exception:
         db.rollback()
         job = db.get(IngestionJob, job_id)
