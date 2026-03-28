@@ -8,12 +8,12 @@ import QuickKeyModule, { QueueAction } from "../components/QuickKeyModule";
 type IngestionJob = {
   job_id: string;
   status: "RUNNING" | "COMPLETED" | "FAILED" | "PAUSED";
+  phase?: "DISCOVERING_FEEDS" | "IMPORTING_ITEMS" | "CLUSTERING" | "SCORING" | "FINALIZING";
   started_at: string;
   updated_at: string;
   total_items: number;
   processed_items: number;
   progress_percent: number;
-  eta_seconds?: number | null;
 };
 
 type IngestionJobStartResponse = {
@@ -49,11 +49,28 @@ export default function QueuePage() {
   const modalRef = useRef<HTMLDivElement | null>(null);
   const running = ingestionJob?.status === "RUNNING";
 
-  function formatETA(seconds?: number | null) {
-    if (seconds === null || seconds === undefined) return "Calculating...";
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
-    return `${minutes}m ${remainingSeconds}s`;
+  const ingestionPhases = ["DISCOVERING_FEEDS", "IMPORTING_ITEMS", "CLUSTERING", "SCORING", "FINALIZING"] as const;
+  const phaseTitleMap: Record<(typeof ingestionPhases)[number], string> = {
+    DISCOVERING_FEEDS: "Discovering Feeds",
+    IMPORTING_ITEMS: "Importing Items",
+    CLUSTERING: "Clustering",
+    SCORING: "Scoring",
+    FINALIZING: "Finalizing",
+  };
+
+  function getPhaseStatus(job: IngestionJob) {
+    const phase = job.phase && ingestionPhases.includes(job.phase) ? job.phase : "DISCOVERING_FEEDS";
+    const phaseIndex = ingestionPhases.indexOf(phase) + 1;
+    return `Phase ${phaseIndex} of ${ingestionPhases.length}: ${phaseTitleMap[phase]}`;
+  }
+
+  function getPhaseCountText(job: IngestionJob) {
+    const phase = job.phase && ingestionPhases.includes(job.phase) ? job.phase : "DISCOVERING_FEEDS";
+    if (phase === "DISCOVERING_FEEDS") return `${job.processed_items} feeds discovered`;
+    if (phase === "IMPORTING_ITEMS") return `${job.processed_items} items imported`;
+    if (phase === "CLUSTERING") return `${job.processed_items} clusters collected`;
+    if (phase === "SCORING") return `${job.processed_items} clusters/items scored`;
+    return "Finalizing";
   }
 
   function parseError(e: any) {
@@ -243,7 +260,6 @@ export default function QueuePage() {
         total_items: 0,
         processed_items: 0,
         progress_percent: 0,
-        eta_seconds: null,
       });
       setErr(message);
       setIngestionModalOpen(true);
@@ -263,7 +279,6 @@ export default function QueuePage() {
       total_items: 0,
       processed_items: 0,
       progress_percent: 0,
-      eta_seconds: null,
     });
 
     void syncCurrentIngestionStatus({
@@ -381,7 +396,7 @@ export default function QueuePage() {
             />
           </div>
           <span>
-            {Math.round(ingestionJob.progress_percent || 0)}% · {ingestionJob.processed_items} / {ingestionJob.total_items}
+            {getPhaseStatus(ingestionJob)} · {Math.round(ingestionJob.progress_percent || 0)}% · {getPhaseCountText(ingestionJob)}
           </span>
         </div>
       )}
@@ -541,7 +556,7 @@ export default function QueuePage() {
             {running && (
               <>
                 <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
-                  <div>Status: {ingestionJob.status}</div>
+                  <div>Status: {getPhaseStatus(ingestionJob)}</div>
                   <div
                     aria-hidden="true"
                     style={{ height: 16, borderRadius: 8, background: "#eee", overflow: "hidden" }}
@@ -556,10 +571,7 @@ export default function QueuePage() {
                     />
                   </div>
                   <div>{Math.round(ingestionJob.progress_percent || 0)}%</div>
-                  <div>
-                    {ingestionJob.processed_items} / {ingestionJob.total_items} items processed
-                  </div>
-                  <div>ETA: {formatETA(ingestionJob.eta_seconds)} remaining</div>
+                  <div>{getPhaseCountText(ingestionJob)}</div>
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={() => setIngestionModalOpen(false)}>Run in background</button>
