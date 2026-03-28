@@ -184,6 +184,7 @@ def _set_phase_progress(
     progress_percent: int,
     processed_items: int = 0,
     total_items: int | None = None,
+    commit: bool = True,
 ):
     phase_floor = INGESTION_PHASES.index(phase) * 20 if phase in INGESTION_PHASES else 0
     job.processed_items = max(0, processed_items)
@@ -191,7 +192,8 @@ def _set_phase_progress(
         job.total_items = max(0, total_items)
     job.progress_percent = max(phase_floor, min(100, progress_percent))
     job.updated_at = datetime.now(timezone.utc)
-    db.commit()
+    if commit:
+        db.commit()
 
 
 def _recover_orphaned_running_job(db: Session, job: IngestionJob) -> bool:
@@ -332,6 +334,7 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
                 progress_percent=20,
                 processed_items=processed_count,
                 total_items=len(discovered_rows),
+                commit=(processed_count % 10 == 0 or processed_count == len(discovered_rows)),
             )
 
         _set_phase_progress(
