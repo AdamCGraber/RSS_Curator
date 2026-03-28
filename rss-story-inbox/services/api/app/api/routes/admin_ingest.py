@@ -1,6 +1,5 @@
 from datetime import datetime, timezone
 from threading import Lock, Thread
-from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -62,7 +61,6 @@ INGESTION_PHASES = (
     "SCORING",
     "FINALIZING",
 )
-_ingestion_runtime: dict[UUID, dict[str, Any]] = {}
 
 
 def ensure_preferences(db: Session) -> UserPreference:
@@ -86,8 +84,23 @@ def ensure_preferences(db: Session) -> UserPreference:
     return prefs
 
 
+def _derive_phase(job: IngestionJob) -> str:
+    if job.status == "COMPLETED":
+        return INGESTION_PHASES[-1]
+
+    progress = job.progress_percent or 0
+    if progress < 20:
+        return "DISCOVERING_FEEDS"
+    if progress < 40:
+        return "IMPORTING_ITEMS"
+    if progress < 60:
+        return "CLUSTERING"
+    if progress < 80:
+        return "SCORING"
+    return "FINALIZING"
+
+
 def _as_status(job: IngestionJob) -> IngestionJobStatus:
-    runtime = _ingestion_runtime.get(job.id, {})
     return IngestionJobStatus(
         job_id=str(job.id),
         status=job.status,
@@ -97,12 +110,8 @@ def _as_status(job: IngestionJob) -> IngestionJobStatus:
         processed_items=job.processed_items,
         progress_percent=job.progress_percent,
         eta_seconds=None,
-        phase=runtime.get("phase", INGESTION_PHASES[0]),
+        phase=_derive_phase(job),
     )
-
-
-def _set_runtime_phase(job_id: UUID, phase: str):
-    _ingestion_runtime.setdefault(job_id, {})["phase"] = phase
 
 
 def _get_running_job(db: Session) -> IngestionJob | None:
@@ -176,11 +185,11 @@ def _set_phase_progress(
     processed_items: int = 0,
     total_items: int | None = None,
 ):
-    _set_runtime_phase(job.id, phase)
+    phase_floor = INGESTION_PHASES.index(phase) * 20 if phase in INGESTION_PHASES else 0
     job.processed_items = max(0, processed_items)
     if total_items is not None:
         job.total_items = max(0, total_items)
-    job.progress_percent = max(0, min(100, progress_percent))
+    job.progress_percent = max(phase_floor, min(100, progress_percent))
     job.updated_at = datetime.now(timezone.utc)
     db.commit()
 
@@ -230,7 +239,6 @@ def _mark_job_failed(db: Session, job: IngestionJob):
 
 def _mark_job_complete(db: Session, job: IngestionJob, imported_items_count: int):
     db.refresh(job)
-    _set_runtime_phase(job.id, INGESTION_PHASES[-1])
     job.total_items = max(0, imported_items_count)
     job.processed_items = max(0, imported_items_count)
     job.progress_percent = 100
@@ -409,8 +417,6 @@ def ingest(payload: IngestRequest | None = None, db: Session = Depends(get_db)):
         )
         db.add(job)
         db.commit()
-        _set_runtime_phase(job.id, INGESTION_PHASES[0])
-
     try:
         Thread(target=run_ingestion_job, args=(job.id, threshold, window_days), daemon=True).start()
     except Exception as exc:
@@ -481,5 +487,5 @@ def api_ingestion_status(db: Session = Depends(get_db)):
         "processed_items": job.processed_items,
         "progress_percent": job.progress_percent,
         "eta_seconds": None,
-        "phase": _ingestion_runtime.get(job.id, {}).get("phase", INGESTION_PHASES[0]),
+        "phase": _derive_phase(job),
     }
