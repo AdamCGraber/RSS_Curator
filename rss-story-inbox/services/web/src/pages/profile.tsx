@@ -2,6 +2,36 @@ import { useEffect, useState } from "react";
 import { apiGet, apiPost, apiPut, apiPostFile } from "../lib/api";
 import { Profile } from "../lib/types";
 
+function parseLeadingNumber(value: string): number | null {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d+)/);
+  return match ? Number(match[1]) : null;
+}
+
+function sortSourcesByName(sources: any[]) {
+  return [...sources].sort((a, b) => {
+    const aName = String(a?.name ?? "");
+    const bName = String(b?.name ?? "");
+
+    const aStartsWithDigit = /^\s*\d/.test(aName);
+    const bStartsWithDigit = /^\s*\d/.test(bName);
+
+    if (aStartsWithDigit !== bStartsWithDigit) {
+      return aStartsWithDigit ? 1 : -1;
+    }
+
+    if (aStartsWithDigit && bStartsWithDigit) {
+      const aNum = parseLeadingNumber(aName);
+      const bNum = parseLeadingNumber(bName);
+      if (aNum !== null && bNum !== null && aNum !== bNum) {
+        return aNum - bNum;
+      }
+    }
+
+    return aName.localeCompare(bName, undefined, { sensitivity: "base", numeric: true });
+  });
+}
+
 export default function ProfilePage() {
   const [p, setP] = useState<Profile | null>(null);
   const [name, setName] = useState("Example Feed");
@@ -64,7 +94,7 @@ export default function ProfilePage() {
   }
 
   function selectAll() {
-    setSelectedSourceIds(sources.map(s => s.id));
+    setSelectedSourceIds(sortSourcesByName(sources).map(s => s.id));
   }
 
   function clearSelection() {
@@ -138,6 +168,8 @@ export default function ProfilePage() {
       setIsImporting(false);
     }
   }
+
+  const sortedSources = sortSourcesByName(sources);
 
   return (
     <div>
@@ -260,11 +292,11 @@ export default function ProfilePage() {
             </button>
           </div>
 
-          {sources.length === 0 ? (
+          {sortedSources.length === 0 ? (
             <p>No sources yet.</p>
           ) : (
             <ul style={{ listStyle: "none", paddingLeft: 0 }}>
-              {sources.map((s) => (
+              {sortedSources.map((s) => (
                 <li key={s.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "6px 0" }}>
                   <input
                     type="checkbox"
