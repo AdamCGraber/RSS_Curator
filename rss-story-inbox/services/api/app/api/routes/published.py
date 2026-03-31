@@ -5,7 +5,13 @@ from urllib.parse import urlparse
 from app.core.db import get_db
 from app.models.cluster import Cluster
 from app.models.article import Article
+from app.models.profile import Profile
 from app.models.summary import Summary
+from app.services.filtering.terms import (
+    deserialize_qualifying_terms_snapshot,
+    find_cluster_qualifying_terms,
+    parse_terms,
+)
 from app.services.workflow.transitions import remove_from_published
 
 router = APIRouter(prefix="/published", tags=["published"])
@@ -31,6 +37,9 @@ def list_published(db: Session = Depends(get_db)):
     )
     seen = set()
     out = []
+    profile = db.query(Profile).order_by(Profile.id.asc()).first()
+    include_terms = parse_terms(profile.include_terms if profile else None)
+    include_terms_2 = parse_terms(profile.include_terms_2 if profile else None)
     for c in clusters:
         if c.id in seen:
             continue
@@ -48,6 +57,18 @@ def list_published(db: Session = Depends(get_db)):
         )
         canonical_url = normalize_http_url(c.canonical_article.url if c.canonical_article else None)
         fallback_url = normalize_http_url(published_article.url if published_article else None)
+        qualifying_terms = deserialize_qualifying_terms_snapshot(c.qualifying_terms_snapshot)
+        if qualifying_terms is None:
+            members = db.query(Article).filter(Article.cluster_id == c.id).all()
+            qualifying_terms = find_cluster_qualifying_terms(
+                [
+                    text
+                    for m in members
+                    for text in (m.title, m.raw_excerpt, m.content_text)
+                ],
+                include_terms,
+                include_terms_2,
+            )
         out.append({
             "cluster_id": c.id,
             "title": c.cluster_title,
@@ -56,6 +77,7 @@ def list_published(db: Session = Depends(get_db)):
             "summary": (s.edited_text or s.draft_text) if s else None,
             "url": canonical_url or fallback_url,
             "score": c.score,
+            "qualifying_terms": qualifying_terms,
         })
     return out
 

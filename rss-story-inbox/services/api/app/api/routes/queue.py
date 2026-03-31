@@ -10,7 +10,12 @@ from app.schemas.common import ActionRequest
 from app.schemas.cluster import ClusterOut, ClusterArticle
 from app.services.workflow.transitions import apply_action
 from app.services.cluster.clusterer import similarity_score
-from app.services.filtering.terms import find_matching_terms, parse_terms
+from app.services.filtering.terms import (
+    deserialize_qualifying_terms_snapshot,
+    find_cluster_qualifying_terms,
+    parse_terms,
+    serialize_qualifying_terms_snapshot,
+)
 
 router = APIRouter(prefix="/queue", tags=["queue"])
 
@@ -53,17 +58,20 @@ def cluster_payload(db: Session, c: Cluster) -> ClusterOut:
     if c.latest_published_at:
         why += f"; latest {c.latest_published_at.isoformat()}"
 
-    profile = db.query(Profile).order_by(Profile.id.asc()).first()
-    include_terms = parse_terms(profile.include_terms if profile else None)
-    include_terms_2 = parse_terms(profile.include_terms_2 if profile else None)
-    qualifying_terms = find_matching_terms(
-        [
-            text
-            for m in members
-            for text in (m.title, m.raw_excerpt, m.content_text)
-        ],
-        [*include_terms, *include_terms_2],
-    )
+    qualifying_terms = deserialize_qualifying_terms_snapshot(c.qualifying_terms_snapshot)
+    if qualifying_terms is None:
+        profile = db.query(Profile).order_by(Profile.id.asc()).first()
+        include_terms = parse_terms(profile.include_terms if profile else None)
+        include_terms_2 = parse_terms(profile.include_terms_2 if profile else None)
+        qualifying_terms = find_cluster_qualifying_terms(
+            [
+                text
+                for m in members
+                for text in (m.title, m.raw_excerpt, m.content_text)
+            ],
+            include_terms,
+            include_terms_2,
+        )
 
     return ClusterOut(
         id=c.id,
@@ -104,6 +112,24 @@ def queue_count(db: Session = Depends(get_db)):
 
 @router.post("/cluster/{cluster_id}/action")
 def act_on_cluster(cluster_id: int, payload: ActionRequest, db: Session = Depends(get_db)):
+    cluster = db.query(Cluster).filter(Cluster.id == cluster_id).first()
+    if cluster and not cluster.qualifying_terms_snapshot:
+        members_for_snapshot = db.query(Article).filter(Article.cluster_id == cluster_id).all()
+        profile = db.query(Profile).order_by(Profile.id.asc()).first()
+        include_terms = parse_terms(profile.include_terms if profile else None)
+        include_terms_2 = parse_terms(profile.include_terms_2 if profile else None)
+        cluster.qualifying_terms_snapshot = serialize_qualifying_terms_snapshot(
+            find_cluster_qualifying_terms(
+                [
+                    text
+                    for m in members_for_snapshot
+                    for text in (m.title, m.raw_excerpt, m.content_text)
+                ],
+                include_terms,
+                include_terms_2,
+            )
+        )
+
     members = db.query(Article).filter(Article.cluster_id == cluster_id).all()
     affected_article_ids: list[int] = []
     for a in members:

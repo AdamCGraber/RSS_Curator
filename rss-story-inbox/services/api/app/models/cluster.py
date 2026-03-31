@@ -1,4 +1,4 @@
-from sqlalchemy import String, DateTime, func, Integer, Float, ForeignKey
+from sqlalchemy import String, Text, DateTime, func, Integer, Float, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 
@@ -15,6 +15,7 @@ class Cluster(Base):
     coverage_count: Mapped[int] = mapped_column(Integer, default=1)
     latest_published_at: Mapped[object] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     score: Mapped[float] = mapped_column(Float, default=0.0, index=True)
+    qualifying_terms_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
     canonical_article: Mapped["Article | None"] = relationship(
         "Article",
         foreign_keys=[canonical_article_id],
@@ -26,4 +27,3 @@ class Cluster(Base):
         foreign_keys="Article.cluster_id",
         back_populates="cluster",
     )
-

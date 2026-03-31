@@ -12,6 +12,11 @@ from app.services.ingest.extract_content import extract_article_text
 from app.services.ai.summarizer import generate_summary
 from app.core.config import settings
 from app.services.cluster.clusterer import similarity_score
+from app.services.filtering.terms import (
+    deserialize_qualifying_terms_snapshot,
+    find_cluster_qualifying_terms,
+    parse_terms,
+)
 
 router = APIRouter(prefix="/shortlist", tags=["shortlist"])
 
@@ -50,6 +55,20 @@ def cluster_out(db: Session, c: Cluster) -> ClusterOut:
         if canonical_member
         else (coverage[0] if coverage else None)
     )
+    qualifying_terms = deserialize_qualifying_terms_snapshot(c.qualifying_terms_snapshot)
+    if qualifying_terms is None:
+        profile = db.query(Profile).order_by(Profile.id.asc()).first()
+        include_terms = parse_terms(profile.include_terms if profile else None)
+        include_terms_2 = parse_terms(profile.include_terms_2 if profile else None)
+        qualifying_terms = find_cluster_qualifying_terms(
+            [
+                text
+                for m in members
+                for text in (m.title, m.raw_excerpt, m.content_text)
+            ],
+            include_terms,
+            include_terms_2,
+        )
     why = "Shortlisted story"
     return ClusterOut(
         id=c.id,
@@ -58,6 +77,7 @@ def cluster_out(db: Session, c: Cluster) -> ClusterOut:
         latest_published_at=c.latest_published_at,
         score=c.score,
         why=why,
+        qualifying_terms=qualifying_terms,
         canonical=canonical,
         coverage=coverage,
     )

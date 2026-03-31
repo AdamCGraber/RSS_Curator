@@ -113,8 +113,12 @@ export default function ShortlistPage() {
                     Open
                   </button>{" "}
                   <button onClick={() => remove(c.id)}>Remove</button>{" "}
-                  <span>{c.cluster_title}</span>{" "}
-                  <span style={{ color: "#555" }}>score {c.score.toFixed(1)}</span>
+                  <span>{c.cluster_title}</span>
+                  <div style={{ color: "#444", marginTop: 4 }}>
+                    <b>Include Terms:</b> {c.qualifying_terms?.length ? c.qualifying_terms.join(", ") : "None"}
+                  </div>
+                  <span style={{ color: "#555" }}>score {c.score.toFixed(1)}</span>{" "}
+                  <span>— coverage {c.coverage_count}</span>
                   <PrimaryUrl cluster={c} />
                 </li>
               ))}
@@ -126,8 +130,12 @@ export default function ShortlistPage() {
           {selected ? (
             <>
               <h3 style={{ marginTop: 0, marginBottom: 0 }}>
-                {selected.cluster_title} <span style={{ color: "#555", fontWeight: 400 }}>score {selected.score.toFixed(1)}</span>
+                {selected.cluster_title}
               </h3>
+              <div style={{ color: "#444", marginTop: 6 }}>
+                <b>Include Terms:</b> {selected.qualifying_terms?.length ? selected.qualifying_terms.join(", ") : "None"}
+              </div>
+              <div style={{ color: "#555", marginTop: 4 }}>score {selected.score.toFixed(1)} — coverage {selected.coverage_count}</div>
               <PrimaryUrl cluster={selected} />
               <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                 <button onClick={() => generate(selected.id)}>Generate summary</button>

@@ -31,6 +31,7 @@ export type Profile = {
 export type PublishedItem = {
   cluster_id: number;
   title: string;
+  qualifying_terms: string[];
   coverage_count: number;
   latest_published_at?: string;
   summary?: string;
