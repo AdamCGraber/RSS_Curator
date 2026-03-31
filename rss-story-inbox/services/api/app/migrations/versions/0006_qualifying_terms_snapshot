@@ -3,7 +3,7 @@
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0006_cluster_qualifying_terms_snapshot"
+revision = "0006_qualifying_terms_snapshot"
 down_revision = "0005_profile_include_terms_2"
 branch_labels = None
 depends_on = None
