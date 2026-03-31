@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 
 TITLE_WEIGHT = 3.0
 SUMMARY_WEIGHT = 2.0
@@ -39,6 +40,22 @@ def find_cluster_qualifying_terms(
     include_terms_2: list[str],
 ) -> list[str]:
     return find_matching_terms(texts, [*include_terms, *include_terms_2])
+
+
+def serialize_qualifying_terms_snapshot(terms: list[str]) -> str:
+    return json.dumps(terms or [])
+
+
+def deserialize_qualifying_terms_snapshot(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(item) for item in parsed if isinstance(item, str)]
 
 
 def _weighted_hits(text: str, terms: list[str], weight: float) -> float:

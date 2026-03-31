@@ -7,7 +7,11 @@ from app.models.cluster import Cluster
 from app.models.article import Article
 from app.models.profile import Profile
 from app.models.summary import Summary
-from app.services.filtering.terms import find_cluster_qualifying_terms, parse_terms
+from app.services.filtering.terms import (
+    deserialize_qualifying_terms_snapshot,
+    find_cluster_qualifying_terms,
+    parse_terms,
+)
 from app.services.workflow.transitions import remove_from_published
 
 router = APIRouter(prefix="/published", tags=["published"])
@@ -53,16 +57,18 @@ def list_published(db: Session = Depends(get_db)):
         )
         canonical_url = normalize_http_url(c.canonical_article.url if c.canonical_article else None)
         fallback_url = normalize_http_url(published_article.url if published_article else None)
-        members = db.query(Article).filter(Article.cluster_id == c.id).all()
-        qualifying_terms = find_cluster_qualifying_terms(
-            [
-                text
-                for m in members
-                for text in (m.title, m.raw_excerpt, m.content_text)
-            ],
-            include_terms,
-            include_terms_2,
-        )
+        qualifying_terms = deserialize_qualifying_terms_snapshot(c.qualifying_terms_snapshot)
+        if not qualifying_terms:
+            members = db.query(Article).filter(Article.cluster_id == c.id).all()
+            qualifying_terms = find_cluster_qualifying_terms(
+                [
+                    text
+                    for m in members
+                    for text in (m.title, m.raw_excerpt, m.content_text)
+                ],
+                include_terms,
+                include_terms_2,
+            )
         out.append({
             "cluster_id": c.id,
             "title": c.cluster_title,

@@ -7,7 +7,11 @@ from app.models.article import Article
 from app.models.cluster import Cluster
 from app.models.profile import Profile
 from app.schemas.cluster import ClusterArticle, ClusterOut
-from app.services.filtering.terms import find_cluster_qualifying_terms, parse_terms
+from app.services.filtering.terms import (
+    deserialize_qualifying_terms_snapshot,
+    find_cluster_qualifying_terms,
+    parse_terms,
+)
 from app.services.workflow.transitions import apply_action, promote_to_shortlist
 
 router = APIRouter(prefix="/kept", tags=["kept"])
@@ -43,18 +47,20 @@ def cluster_out(db: Session, c: Cluster) -> ClusterOut:
     coverage = [_article_payload(a) for a in coverage_members]
     canonical = _article_payload(canonical_member) if canonical_member else (coverage[0] if coverage else None)
 
-    profile = db.query(Profile).order_by(Profile.id.asc()).first()
-    include_terms = parse_terms(profile.include_terms if profile else None)
-    include_terms_2 = parse_terms(profile.include_terms_2 if profile else None)
-    qualifying_terms = find_cluster_qualifying_terms(
-        [
-            text
-            for m in members
-            for text in (m.title, m.raw_excerpt, m.content_text)
-        ],
-        include_terms,
-        include_terms_2,
-    )
+    qualifying_terms = deserialize_qualifying_terms_snapshot(c.qualifying_terms_snapshot)
+    if not qualifying_terms:
+        profile = db.query(Profile).order_by(Profile.id.asc()).first()
+        include_terms = parse_terms(profile.include_terms if profile else None)
+        include_terms_2 = parse_terms(profile.include_terms_2 if profile else None)
+        qualifying_terms = find_cluster_qualifying_terms(
+            [
+                text
+                for m in members
+                for text in (m.title, m.raw_excerpt, m.content_text)
+            ],
+            include_terms,
+            include_terms_2,
+        )
 
     why = f"Kept story; covered by {c.coverage_count} outlets"
     return ClusterOut(

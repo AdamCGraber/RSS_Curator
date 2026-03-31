@@ -1,9 +1,12 @@
 import unittest
 
 from app.services.filtering.terms import (
+    deserialize_qualifying_terms_snapshot,
+    find_cluster_qualifying_terms,
     find_matching_terms,
     parse_terms,
     score_article_relevance,
+    serialize_qualifying_terms_snapshot,
     should_keep_article,
 )
 
@@ -158,6 +161,23 @@ class FilteringTermsTests(unittest.TestCase):
             terms=["AI", " ai ", "safety"],
         )
         self.assertEqual(matched, ["ai", "safety"])
+
+    def test_find_cluster_qualifying_terms_combines_include_lists(self):
+        matched = find_cluster_qualifying_terms(
+            texts=["Space startup adopts AI tooling"],
+            include_terms=["ai"],
+            include_terms_2=["space"],
+        )
+        self.assertEqual(matched, ["ai", "space"])
+
+    def test_qualifying_terms_snapshot_round_trip(self):
+        raw = serialize_qualifying_terms_snapshot(["ai", "space"])
+        parsed = deserialize_qualifying_terms_snapshot(raw)
+        self.assertEqual(parsed, ["ai", "space"])
+
+    def test_qualifying_terms_snapshot_invalid_payload(self):
+        parsed = deserialize_qualifying_terms_snapshot("not-json")
+        self.assertEqual(parsed, [])
 
 
 if __name__ == "__main__":
