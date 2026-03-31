@@ -33,6 +33,14 @@ def find_matching_terms(texts: list[str | None], terms: list[str]) -> list[str]:
     return matched
 
 
+def find_cluster_qualifying_terms(
+    texts: list[str | None],
+    include_terms: list[str],
+    include_terms_2: list[str],
+) -> list[str]:
+    return find_matching_terms(texts, [*include_terms, *include_terms_2])
+
+
 def _weighted_hits(text: str, terms: list[str], weight: float) -> float:
     if not text or not terms:
         return 0.0

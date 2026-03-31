@@ -65,15 +65,17 @@ export default function PublishedPage() {
                   <h3 style={{ marginTop: 0, marginBottom: 0 }}>{it.title}</h3>
                   <button onClick={() => remove(it.cluster_id)}>Remove</button>
                 </div>
+                <div style={{ color: "#444", marginTop: 6 }}>
+                  <b>Include Terms:</b> {it.qualifying_terms?.length ? it.qualifying_terms.join(", ") : "None"}
+                </div>
                 <div style={{ color: "#555", marginBottom: 8 }}>
-                  Coverage: {it.coverage_count}
+                  Coverage: {it.coverage_count} — score {it.score.toFixed(1)}
                 </div>
                 {safeUrl && (
                   <div style={{ marginBottom: 4, overflowWrap: "anywhere" }}>
                     <a href={safeUrl} target="_blank" rel="noopener noreferrer">
                       {safeUrl}
-                    </a>{" "}
-                    <span style={{ color: "#555" }}>— score {it.score.toFixed(1)}</span>
+                    </a>
                   </div>
                 )}
                 <div style={{ color: "#555", fontSize: 14 }}>

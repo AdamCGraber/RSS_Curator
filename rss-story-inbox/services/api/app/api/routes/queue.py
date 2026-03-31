@@ -10,7 +10,7 @@ from app.schemas.common import ActionRequest
 from app.schemas.cluster import ClusterOut, ClusterArticle
 from app.services.workflow.transitions import apply_action
 from app.services.cluster.clusterer import similarity_score
-from app.services.filtering.terms import find_matching_terms, parse_terms
+from app.services.filtering.terms import find_cluster_qualifying_terms, parse_terms
 
 router = APIRouter(prefix="/queue", tags=["queue"])
 
@@ -56,13 +56,14 @@ def cluster_payload(db: Session, c: Cluster) -> ClusterOut:
     profile = db.query(Profile).order_by(Profile.id.asc()).first()
     include_terms = parse_terms(profile.include_terms if profile else None)
     include_terms_2 = parse_terms(profile.include_terms_2 if profile else None)
-    qualifying_terms = find_matching_terms(
+    qualifying_terms = find_cluster_qualifying_terms(
         [
             text
             for m in members
             for text in (m.title, m.raw_excerpt, m.content_text)
         ],
-        [*include_terms, *include_terms_2],
+        include_terms,
+        include_terms_2,
     )
 
     return ClusterOut(

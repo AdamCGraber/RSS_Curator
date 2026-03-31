@@ -48,8 +48,13 @@ export default function KeptPage() {
         <ul>
           {items.map(c => (
             <li key={c.id} style={{ marginBottom: 10 }}>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                <b>{c.cluster_title}</b>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                <b style={{ display: "block" }}>{c.cluster_title}</b>
+              </div>
+              <div style={{ color: "#444", marginTop: 4 }}>
+                <b>Include Terms:</b> {c.qualifying_terms?.length ? c.qualifying_terms.join(", ") : "None"}
+              </div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
                 <span style={{ color: "#555" }}>score {c.score.toFixed(1)}</span>
                 <span>— coverage {c.coverage_count}</span>
               </div>

@@ -9,17 +9,19 @@ export default function StoryCard({ c }: { c: Cluster }) {
   return (
     <div style={{ border: "1px solid #ddd", borderRadius: 8, padding: 12 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-        <h3 style={{ margin: 0 }}>{c.cluster_title}</h3>
+        <div>
+          <h3 style={{ margin: 0 }}>{c.cluster_title}</h3>
+          <p style={{ marginTop: 6, marginBottom: 0, color: "#444" }}>
+            <b>Include Terms:</b>{" "}
+            {c.qualifying_terms && c.qualifying_terms.length > 0 ? c.qualifying_terms.join(", ") : "None"}
+          </p>
+        </div>
         <div style={{ textAlign: "right", minWidth: 180 }}>
           <div><b>Coverage:</b> {c.coverage_count}</div>
           <div><b>Score:</b> {c.score.toFixed(1)}</div>
         </div>
       </div>
       <p style={{ marginTop: 8, color: "#444" }}>{c.why}</p>
-      <p style={{ marginTop: 4, color: "#444" }}>
-        <b>Qualifying Terms:</b>{" "}
-        {c.qualifying_terms && c.qualifying_terms.length > 0 ? c.qualifying_terms.join(", ") : "None"}
-      </p>
 
       {c.canonical && (
         <p style={{ marginTop: 8 }}>
