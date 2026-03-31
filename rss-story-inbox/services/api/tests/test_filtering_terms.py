@@ -177,6 +177,10 @@ class FilteringTermsTests(unittest.TestCase):
 
     def test_qualifying_terms_snapshot_invalid_payload(self):
         parsed = deserialize_qualifying_terms_snapshot("not-json")
+        self.assertIsNone(parsed)
+
+    def test_qualifying_terms_snapshot_empty_list_is_valid(self):
+        parsed = deserialize_qualifying_terms_snapshot("[]")
         self.assertEqual(parsed, [])
 
 

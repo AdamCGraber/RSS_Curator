@@ -58,7 +58,7 @@ def list_published(db: Session = Depends(get_db)):
         canonical_url = normalize_http_url(c.canonical_article.url if c.canonical_article else None)
         fallback_url = normalize_http_url(published_article.url if published_article else None)
         qualifying_terms = deserialize_qualifying_terms_snapshot(c.qualifying_terms_snapshot)
-        if not qualifying_terms:
+        if qualifying_terms is None:
             members = db.query(Article).filter(Article.cluster_id == c.id).all()
             qualifying_terms = find_cluster_qualifying_terms(
                 [

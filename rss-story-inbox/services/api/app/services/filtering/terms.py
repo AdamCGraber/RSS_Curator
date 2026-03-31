@@ -46,15 +46,15 @@ def serialize_qualifying_terms_snapshot(terms: list[str]) -> str:
     return json.dumps(terms or [])
 
 
-def deserialize_qualifying_terms_snapshot(raw: str | None) -> list[str]:
-    if not raw:
-        return []
+def deserialize_qualifying_terms_snapshot(raw: str | None) -> list[str] | None:
+    if raw is None:
+        return None
     try:
         parsed = json.loads(raw)
     except (TypeError, ValueError):
-        return []
+        return None
     if not isinstance(parsed, list):
-        return []
+        return None
     return [str(item) for item in parsed if isinstance(item, str)]
 
 

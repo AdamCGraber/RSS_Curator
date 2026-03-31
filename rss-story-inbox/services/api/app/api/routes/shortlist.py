@@ -56,7 +56,7 @@ def cluster_out(db: Session, c: Cluster) -> ClusterOut:
         else (coverage[0] if coverage else None)
     )
     qualifying_terms = deserialize_qualifying_terms_snapshot(c.qualifying_terms_snapshot)
-    if not qualifying_terms:
+    if qualifying_terms is None:
         profile = db.query(Profile).order_by(Profile.id.asc()).first()
         include_terms = parse_terms(profile.include_terms if profile else None)
         include_terms_2 = parse_terms(profile.include_terms_2 if profile else None)
