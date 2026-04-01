@@ -100,9 +100,11 @@ function getConflictingAction(
 export default function QuickKeyModule({
   onAction,
   disabled,
+  captureEnabled = true,
 }: {
   onAction: (action: QueueAction) => void;
   disabled: boolean;
+  captureEnabled?: boolean;
 }) {
   const [quickKeys, setQuickKeys] = useState<QuickKeyConfig>(DEFAULT_QUICK_KEYS);
   const [captureAction, setCaptureAction] = useState<QueueAction | null>(null);
@@ -134,6 +136,15 @@ export default function QuickKeyModule({
     setCapturePreview([]);
     setCaptureAction(null);
   }, [disabled]);
+
+  useEffect(() => {
+    if (captureEnabled) return;
+    capturePressedRef.current.clear();
+    captureCandidateRef.current = [];
+    setCapturePreview([]);
+    setCaptureError("");
+    setCaptureAction(null);
+  }, [captureEnabled]);
 
   function handleResetDefaults() {
     setQuickKeys(DEFAULT_QUICK_KEYS);
@@ -178,7 +189,7 @@ export default function QuickKeyModule({
         return;
       }
 
-      if (captureAction) {
+      if (captureEnabled && captureAction) {
         if (key === "esc") {
           resetCaptureState();
           setCaptureError("");
@@ -213,7 +224,7 @@ export default function QuickKeyModule({
     const onKeyUp = (event: KeyboardEvent) => {
       const key = normalizeKey(event.key);
 
-      if (captureAction) {
+      if (captureEnabled && captureAction) {
         capturePressedRef.current.delete(key);
         if (capturePressedRef.current.size === 0) {
           if (captureCandidateRef.current.length > 0) {

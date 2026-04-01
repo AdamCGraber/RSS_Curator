@@ -585,6 +585,7 @@ export default function QueuePage() {
           <QuickKeyModule
             onAction={handleQuickAction}
             disabled={(!c && !(previousCluster && previousActionArticleIds.length > 0)) || ingestionModalOpen}
+            captureEnabled={settingsModalOpen}
           />
 
           <div style={{ marginTop: 12 }}>
