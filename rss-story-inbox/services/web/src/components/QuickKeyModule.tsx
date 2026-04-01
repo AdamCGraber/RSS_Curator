@@ -131,10 +131,8 @@ export default function QuickKeyModule({
 
   useEffect(() => {
     if (!disabled) return;
-    capturePressedRef.current.clear();
-    captureCandidateRef.current = [];
-    setCapturePreview([]);
-    setCaptureAction(null);
+    pressedRef.current.clear();
+    actionLockRef.current = false;
   }, [disabled]);
 
   useEffect(() => {
@@ -182,13 +180,6 @@ export default function QuickKeyModule({
     const onKeyDown = (event: KeyboardEvent) => {
       const key = normalizeKey(event.key);
 
-      if (disabled) {
-        if (captureAction) {
-          resetCaptureState();
-        }
-        return;
-      }
-
       if (captureEnabled && captureAction) {
         if (key === "esc") {
           resetCaptureState();
@@ -201,6 +192,10 @@ export default function QuickKeyModule({
         captureCandidateRef.current = combo;
         setCapturePreview(combo);
         event.preventDefault();
+        return;
+      }
+
+      if (disabled) {
         return;
       }
 
