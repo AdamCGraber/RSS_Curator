@@ -366,7 +366,32 @@ export default function QueuePage() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setSettingsModalOpen(false);
+        return;
       }
+
+      if (event.key !== "Tab") return;
+      const root = settingsModalRef.current;
+      if (!root) return;
+
+      const focusables = Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((el) => !el.hasAttribute("disabled"));
+
+      if (focusables.length === 0) return;
+
+      const currentIndex = focusables.indexOf(document.activeElement as HTMLElement);
+      const nextIndex = event.shiftKey
+        ? currentIndex <= 0
+          ? focusables.length - 1
+          : currentIndex - 1
+        : currentIndex === focusables.length - 1
+          ? 0
+          : currentIndex + 1;
+
+      event.preventDefault();
+      focusables[nextIndex]?.focus();
     };
 
     document.addEventListener("keydown", onKeyDown);
