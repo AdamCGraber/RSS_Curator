@@ -69,7 +69,7 @@ export default function QueuePage() {
   function getPhaseCountText(job: IngestionJob) {
     const phase = job.phase && ingestionPhases.includes(job.phase) ? job.phase : "DISCOVERING_FEEDS";
     if (phase === "DISCOVERING_FEEDS") return `${job.processed_items} feeds discovered`;
-    if (phase === "IMPORTING_ITEMS") return `${job.processed_items} items imported`;
+    if (phase === "IMPORTING_ITEMS") return `${job.processed_items} items processed`;
     if (phase === "CLUSTERING") return `${job.processed_items} clusters collected`;
     if (phase === "SCORING") return `${job.processed_items} clusters/items scored`;
     return "Finalizing";

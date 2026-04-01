@@ -62,6 +62,11 @@ INGESTION_PHASES = (
     "FINALIZING",
 )
 
+PHASE_1_MAX_PROGRESS = 65
+PHASE_2_MAX_PROGRESS = 90
+PHASE_3_MAX_PROGRESS = 95
+PHASE_4_MAX_PROGRESS = 99
+
 
 def ensure_preferences(db: Session) -> UserPreference:
     default_window_days = max(1, int(settings.cluster_time_window_hours / 24) or 2)
@@ -89,13 +94,13 @@ def _derive_phase(job: IngestionJob) -> str:
         return INGESTION_PHASES[-1]
 
     progress = job.progress_percent or 0
-    if progress < 20:
+    if progress < PHASE_1_MAX_PROGRESS:
         return "DISCOVERING_FEEDS"
-    if progress < 40:
+    if progress < PHASE_2_MAX_PROGRESS:
         return "IMPORTING_ITEMS"
-    if progress < 60:
+    if progress < PHASE_3_MAX_PROGRESS:
         return "CLUSTERING"
-    if progress < 80:
+    if progress < PHASE_4_MAX_PROGRESS:
         return "SCORING"
     return "FINALIZING"
 
@@ -186,14 +191,27 @@ def _set_phase_progress(
     total_items: int | None = None,
     commit: bool = True,
 ):
-    phase_floor = INGESTION_PHASES.index(phase) * 20 if phase in INGESTION_PHASES else 0
     job.processed_items = max(0, processed_items)
     if total_items is not None:
         job.total_items = max(0, total_items)
-    job.progress_percent = max(phase_floor, min(100, progress_percent))
+    job.progress_percent = max(0, min(100, progress_percent))
     job.updated_at = datetime.now(timezone.utc)
     if commit:
         db.commit()
+
+
+def _phase_1_progress(discovered_feed_count: int, total_sources: int) -> int:
+    if total_sources <= 0:
+        return PHASE_1_MAX_PROGRESS
+    ratio = max(0.0, min(1.0, discovered_feed_count / total_sources))
+    return int(round(ratio * PHASE_1_MAX_PROGRESS))
+
+
+def _phase_2_progress(processed_items: int, total_items: int) -> int:
+    if total_items <= 0:
+        return PHASE_2_MAX_PROGRESS
+    ratio = max(0.0, min(1.0, processed_items / total_items))
+    return int(round(PHASE_1_MAX_PROGRESS + ratio * (PHASE_2_MAX_PROGRESS - PHASE_1_MAX_PROGRESS)))
 
 
 def _count_distinct_clusters_for_urls(db: Session, urls: list[str], chunk_size: int = 500) -> int:
@@ -279,6 +297,7 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
 
         snapshot = get_active_sources_snapshot(db)
         sources = snapshot.get("sources", [])
+        total_sources = len(sources)
 
         profile = db.query(Profile).order_by(Profile.id.asc()).first()
         include_terms = parse_terms(profile.include_terms if profile else None)
@@ -295,7 +314,7 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
                 db,
                 job,
                 phase=INGESTION_PHASES[0],
-                progress_percent=0,
+                progress_percent=_phase_1_progress(discovered_feed_count, total_sources),
                 processed_items=discovered_feed_count,
             )
             for item in items:
@@ -327,7 +346,7 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
             db,
             job,
             phase=INGESTION_PHASES[0],
-            progress_percent=20,
+            progress_percent=PHASE_1_MAX_PROGRESS,
             processed_items=discovered_feed_count,
         )
 
@@ -336,7 +355,7 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
             db,
             job,
             phase=INGESTION_PHASES[1],
-            progress_percent=20,
+            progress_percent=PHASE_1_MAX_PROGRESS,
             total_items=len(discovered_rows),
         )
         processed_count = 0
@@ -350,7 +369,7 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
                 db,
                 job,
                 phase=INGESTION_PHASES[1],
-                progress_percent=20,
+                progress_percent=_phase_2_progress(processed_count, len(discovered_rows)),
                 processed_items=processed_count,
                 total_items=len(discovered_rows),
                 commit=(processed_count % 10 == 0 or processed_count == len(discovered_rows)),
@@ -360,34 +379,34 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
             db,
             job,
             phase=INGESTION_PHASES[1],
-            progress_percent=40,
+            progress_percent=PHASE_2_MAX_PROGRESS,
             processed_items=processed_count,
             total_items=len(discovered_rows),
         )
 
-        _set_phase_progress(db, job, phase=INGESTION_PHASES[2], progress_percent=40)
+        _set_phase_progress(db, job, phase=INGESTION_PHASES[2], progress_percent=PHASE_2_MAX_PROGRESS)
         cluster_recent(db, threshold=threshold, time_window_days=window_days)
         cluster_count = _count_distinct_clusters_for_urls(db, run_urls)
         _set_phase_progress(
             db,
             job,
             phase=INGESTION_PHASES[2],
-            progress_percent=60,
+            progress_percent=PHASE_3_MAX_PROGRESS,
             processed_items=cluster_count,
         )
 
-        _set_phase_progress(db, job, phase=INGESTION_PHASES[3], progress_percent=60)
+        _set_phase_progress(db, job, phase=INGESTION_PHASES[3], progress_percent=PHASE_3_MAX_PROGRESS)
         score_clusters(db)
         scored_clusters = _count_distinct_clusters_for_urls(db, run_urls)
         _set_phase_progress(
             db,
             job,
             phase=INGESTION_PHASES[3],
-            progress_percent=80,
+            progress_percent=PHASE_4_MAX_PROGRESS,
             processed_items=scored_clusters,
         )
 
-        _set_phase_progress(db, job, phase=INGESTION_PHASES[4], progress_percent=80)
+        _set_phase_progress(db, job, phase=INGESTION_PHASES[4], progress_percent=PHASE_4_MAX_PROGRESS)
         db.commit()
 
         _mark_job_complete(db, job, imported_items_count=processed_count)
