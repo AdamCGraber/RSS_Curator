@@ -45,8 +45,10 @@ export default function QueuePage() {
   const [timeWindowDays, setTimeWindowDays] = useState<number>(2);
   const [ingestionJob, setIngestionJob] = useState<IngestionJob | null>(null);
   const [ingestionModalOpen, setIngestionModalOpen] = useState<boolean>(false);
+  const [settingsModalOpen, setSettingsModalOpen] = useState<boolean>(false);
 
   const modalRef = useRef<HTMLDivElement | null>(null);
+  const settingsModalRef = useRef<HTMLDivElement | null>(null);
   const running = ingestionJob?.status === "RUNNING";
 
   const ingestionPhases = ["DISCOVERING_FEEDS", "IMPORTING_ITEMS", "CLUSTERING", "SCORING", "FINALIZING"] as const;
@@ -358,6 +360,46 @@ export default function QueuePage() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [ingestionModalOpen, running]);
 
+  useEffect(() => {
+    if (!settingsModalOpen) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSettingsModalOpen(false);
+        return;
+      }
+
+      if (event.key !== "Tab") return;
+      const root = settingsModalRef.current;
+      if (!root) return;
+
+      const focusables = Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((el) => !el.hasAttribute("disabled"));
+
+      if (focusables.length === 0) return;
+
+      const currentIndex = focusables.indexOf(document.activeElement as HTMLElement);
+      const nextIndex = event.shiftKey
+        ? currentIndex <= 0
+          ? focusables.length - 1
+          : currentIndex - 1
+        : currentIndex === focusables.length - 1
+          ? 0
+          : currentIndex + 1;
+
+      event.preventDefault();
+      focusables[nextIndex]?.focus();
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    settingsModalRef.current?.querySelector<HTMLElement>("button, input, [tabindex]")?.focus();
+
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [settingsModalOpen]);
+
   return (
     <div>
       <h1 style={{ marginTop: 0 }}>Queue</h1>
@@ -401,46 +443,6 @@ export default function QueuePage() {
         </div>
       )}
 
-      <div style={{ marginBottom: 16 }}>
-        <label htmlFor="threshold-range">
-          <b>Story similarity threshold</b> ({thresholdPct}%)
-        </label>
-        <input
-          id="threshold-range"
-          type="range"
-          min={50}
-          max={100}
-          value={thresholdPct}
-          onChange={(e) => setThresholdPct(Number(e.target.value))}
-          style={{ width: "100%", marginTop: 6 }}
-        />
-        <p style={{ marginTop: 4, color: "#555" }}>
-          Higher values create fewer, tighter clusters. Lower values group more loosely related stories.
-        </p>
-
-        <label htmlFor="window-days">
-          <b>Story time window (days)</b>
-        </label>
-        <input
-          id="window-days"
-          type="number"
-          min={1}
-          max={30}
-          value={timeWindowDays}
-          onChange={(e) => setTimeWindowDays(Number(e.target.value))}
-          style={{ marginLeft: 8, width: 80 }}
-        />
-        <p style={{ marginTop: 4, color: "#555" }}>
-          Only articles published within this window will be compared as the same story.
-        </p>
-
-      </div>
-
-      <QuickKeyModule
-        onAction={handleQuickAction}
-        disabled={(!c && !(previousCluster && previousActionArticleIds.length > 0)) || ingestionModalOpen}
-      />
-
       <div
         style={{
           position: "sticky",
@@ -476,6 +478,8 @@ export default function QueuePage() {
           undoDisabled={!previousCluster || previousActionArticleIds.length === 0}
           articlesToReview={articlesToReview}
         />
+        <div style={{ marginLeft: "auto" }} />
+        <button onClick={() => setSettingsModalOpen(true)}>Settings</button>
       </div>
 
       {notice && <p style={{ color: "seagreen" }}>{notice}</p>}
@@ -508,6 +512,87 @@ export default function QueuePage() {
       {err && <p style={{ color: "crimson" }}>{err}</p>}
       {!c && !err && <p>No items in queue. Add sources in Profile, then ingest.</p>}
       {c && <StoryCard c={c} />}
+
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-modal-title"
+        aria-hidden={!settingsModalOpen}
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.45)",
+          display: settingsModalOpen ? "flex" : "none",
+          justifyContent: "center",
+          alignItems: "center",
+          zIndex: 1000,
+          padding: 16,
+        }}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            setSettingsModalOpen(false);
+          }
+        }}
+      >
+        <div
+          ref={settingsModalRef}
+          style={{
+            width: "min(700px, 100%)",
+            borderRadius: 10,
+            background: "#fff",
+            padding: 18,
+            boxShadow: "0 16px 36px rgba(0,0,0,0.25)",
+          }}
+        >
+          <h2 id="settings-modal-title" style={{ marginTop: 0 }}>
+            Settings
+          </h2>
+
+          <div style={{ marginBottom: 16 }}>
+            <label htmlFor="threshold-range">
+              <b>Story similarity threshold</b> ({thresholdPct}%)
+            </label>
+            <input
+              id="threshold-range"
+              type="range"
+              min={50}
+              max={100}
+              value={thresholdPct}
+              onChange={(e) => setThresholdPct(Number(e.target.value))}
+              style={{ width: "100%", marginTop: 6 }}
+            />
+            <p style={{ marginTop: 4, color: "#555" }}>
+              Higher values create fewer, tighter clusters. Lower values group more loosely related stories.
+            </p>
+
+            <label htmlFor="window-days">
+              <b>Story time window (days)</b>
+            </label>
+            <input
+              id="window-days"
+              type="number"
+              min={1}
+              max={30}
+              value={timeWindowDays}
+              onChange={(e) => setTimeWindowDays(Number(e.target.value))}
+              style={{ marginLeft: 8, width: 80 }}
+            />
+            <p style={{ marginTop: 4, color: "#555" }}>
+              Only articles published within this window will be compared as the same story.
+            </p>
+          </div>
+
+          <QuickKeyModule
+            onAction={handleQuickAction}
+            disabled={(!c && !(previousCluster && previousActionArticleIds.length > 0)) || ingestionModalOpen}
+            captureEnabled={settingsModalOpen}
+          />
+
+          <div style={{ marginTop: 12 }}>
+            <button onClick={() => setSettingsModalOpen(false)}>Close</button>
+          </div>
+        </div>
+      </div>
 
       {ingestionModalOpen && ingestionJob && (
         <div
