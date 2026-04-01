@@ -488,86 +488,85 @@ export default function QueuePage() {
       {!c && !err && <p>No items in queue. Add sources in Profile, then ingest.</p>}
       {c && <StoryCard c={c} />}
 
-      {settingsModalOpen && (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-modal-title"
+        aria-hidden={!settingsModalOpen}
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.45)",
+          display: settingsModalOpen ? "flex" : "none",
+          justifyContent: "center",
+          alignItems: "center",
+          zIndex: 1000,
+          padding: 16,
+        }}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            setSettingsModalOpen(false);
+          }
+        }}
+      >
         <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="settings-modal-title"
+          ref={settingsModalRef}
           style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.45)",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            zIndex: 1000,
-            padding: 16,
-          }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setSettingsModalOpen(false);
-            }
+            width: "min(700px, 100%)",
+            borderRadius: 10,
+            background: "#fff",
+            padding: 18,
+            boxShadow: "0 16px 36px rgba(0,0,0,0.25)",
           }}
         >
-          <div
-            ref={settingsModalRef}
-            style={{
-              width: "min(700px, 100%)",
-              borderRadius: 10,
-              background: "#fff",
-              padding: 18,
-              boxShadow: "0 16px 36px rgba(0,0,0,0.25)",
-            }}
-          >
-            <h2 id="settings-modal-title" style={{ marginTop: 0 }}>
-              Settings
-            </h2>
+          <h2 id="settings-modal-title" style={{ marginTop: 0 }}>
+            Settings
+          </h2>
 
-            <div style={{ marginBottom: 16 }}>
-              <label htmlFor="threshold-range">
-                <b>Story similarity threshold</b> ({thresholdPct}%)
-              </label>
-              <input
-                id="threshold-range"
-                type="range"
-                min={50}
-                max={100}
-                value={thresholdPct}
-                onChange={(e) => setThresholdPct(Number(e.target.value))}
-                style={{ width: "100%", marginTop: 6 }}
-              />
-              <p style={{ marginTop: 4, color: "#555" }}>
-                Higher values create fewer, tighter clusters. Lower values group more loosely related stories.
-              </p>
-
-              <label htmlFor="window-days">
-                <b>Story time window (days)</b>
-              </label>
-              <input
-                id="window-days"
-                type="number"
-                min={1}
-                max={30}
-                value={timeWindowDays}
-                onChange={(e) => setTimeWindowDays(Number(e.target.value))}
-                style={{ marginLeft: 8, width: 80 }}
-              />
-              <p style={{ marginTop: 4, color: "#555" }}>
-                Only articles published within this window will be compared as the same story.
-              </p>
-            </div>
-
-            <QuickKeyModule
-              onAction={handleQuickAction}
-              disabled={(!c && !(previousCluster && previousActionArticleIds.length > 0)) || ingestionModalOpen}
+          <div style={{ marginBottom: 16 }}>
+            <label htmlFor="threshold-range">
+              <b>Story similarity threshold</b> ({thresholdPct}%)
+            </label>
+            <input
+              id="threshold-range"
+              type="range"
+              min={50}
+              max={100}
+              value={thresholdPct}
+              onChange={(e) => setThresholdPct(Number(e.target.value))}
+              style={{ width: "100%", marginTop: 6 }}
             />
+            <p style={{ marginTop: 4, color: "#555" }}>
+              Higher values create fewer, tighter clusters. Lower values group more loosely related stories.
+            </p>
 
-            <div style={{ marginTop: 12 }}>
-              <button onClick={() => setSettingsModalOpen(false)}>Close</button>
-            </div>
+            <label htmlFor="window-days">
+              <b>Story time window (days)</b>
+            </label>
+            <input
+              id="window-days"
+              type="number"
+              min={1}
+              max={30}
+              value={timeWindowDays}
+              onChange={(e) => setTimeWindowDays(Number(e.target.value))}
+              style={{ marginLeft: 8, width: 80 }}
+            />
+            <p style={{ marginTop: 4, color: "#555" }}>
+              Only articles published within this window will be compared as the same story.
+            </p>
+          </div>
+
+          <QuickKeyModule
+            onAction={handleQuickAction}
+            disabled={(!c && !(previousCluster && previousActionArticleIds.length > 0)) || ingestionModalOpen}
+          />
+
+          <div style={{ marginTop: 12 }}>
+            <button onClick={() => setSettingsModalOpen(false)}>Close</button>
           </div>
         </div>
-      )}
+      </div>
 
       {ingestionModalOpen && ingestionJob && (
         <div
