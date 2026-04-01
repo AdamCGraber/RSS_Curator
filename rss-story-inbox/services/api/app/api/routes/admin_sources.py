@@ -3,7 +3,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import JSONResponse
-from sqlalchemy import delete, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
@@ -70,6 +70,18 @@ def delete_sources_bulk(
             deleted_count = 0
             version = get_sources_version(db)
             if existing_ids:
+                article_ids_for_sources = select(Article.id).where(Article.source_id.in_(existing_ids))
+                db.execute(
+                    update(Cluster)
+                    .where(Cluster.canonical_article_id.in_(article_ids_for_sources))
+                    .values(canonical_article_id=None)
+                )
+                db.execute(
+                    update(Article)
+                    .where(Article.source_id.in_(existing_ids))
+                    .where(Article.cluster_id.is_not(None))
+                    .values(cluster_id=None)
+                )
                 db.execute(delete(Article).where(Article.source_id.in_(existing_ids)))
                 result = db.execute(delete(Source).where(Source.id.in_(existing_ids)))
                 deleted_count = result.rowcount or 0
