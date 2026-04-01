@@ -70,7 +70,26 @@ def delete_sources_bulk(
             deleted_count = 0
             version = get_sources_version(db)
             if existing_ids:
-                db.execute(delete(Article).where(Article.source_id.in_(existing_ids)))
+                existing_article_rows = (
+                    db.query(Article.id)
+                    .filter(Article.source_id.in_(existing_ids))
+                    .all()
+                )
+                existing_article_ids = {row[0] for row in existing_article_rows}
+
+                if existing_article_ids:
+                    db.execute(
+                        update(Cluster)
+                        .where(Cluster.canonical_article_id.in_(existing_article_ids))
+                        .values(canonical_article_id=None)
+                    )
+                    db.execute(
+                        update(Article)
+                        .where(Article.cluster_id.is_not(None))
+                        .where(Article.id.in_(existing_article_ids))
+                        .values(cluster_id=None)
+                    )
+                    db.execute(delete(Article).where(Article.id.in_(existing_article_ids)))
                 result = db.execute(delete(Source).where(Source.id.in_(existing_ids)))
                 deleted_count = result.rowcount or 0
                 if deleted_count:
