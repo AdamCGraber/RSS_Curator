@@ -125,6 +125,7 @@ export default function QuickKeyModule({
   const [captureAction, setCaptureAction] = useState<QueueAction | null>(null);
   const [capturePreview, setCapturePreview] = useState<string[]>([]);
   const [captureError, setCaptureError] = useState<string>("");
+  const [captureWarning, setCaptureWarning] = useState<string>("");
   const [storedConflictWarning, setStoredConflictWarning] = useState<string>("");
 
   const pressedRef = useRef<Set<string>>(new Set());
@@ -161,12 +162,14 @@ export default function QuickKeyModule({
     captureCandidateRef.current = [];
     setCapturePreview([]);
     setCaptureError("");
+    setCaptureWarning("");
     setCaptureAction(null);
   }, [captureEnabled]);
 
   function handleResetDefaults() {
     setQuickKeys(DEFAULT_QUICK_KEYS);
     setCaptureError("");
+    setCaptureWarning("");
   }
 
   function handleClearAction(action: QueueAction) {
@@ -175,6 +178,7 @@ export default function QuickKeyModule({
       [action]: [],
     }));
     setCaptureError("");
+    setCaptureWarning("");
 
     if (captureAction === action) {
       capturePressedRef.current.clear();
@@ -203,6 +207,7 @@ export default function QuickKeyModule({
       capturePressedRef.current.clear();
       captureCandidateRef.current = [];
       setCapturePreview([]);
+      setCaptureWarning("");
       setCaptureAction(null);
     };
 
@@ -223,6 +228,11 @@ export default function QuickKeyModule({
         }
 
         capturePressedRef.current.add(key);
+        if (capturePressedRef.current.size > 3) {
+          setCaptureWarning("Only up to 3 keys are supported; extra keys are ignored.");
+        } else {
+          setCaptureWarning("");
+        }
         const combo = normalizeCombo(Array.from(capturePressedRef.current)).slice(0, 3);
         captureCandidateRef.current = combo;
         setCapturePreview(combo);
@@ -256,6 +266,9 @@ export default function QuickKeyModule({
 
       if (captureEnabled && captureAction) {
         capturePressedRef.current.delete(key);
+        if (capturePressedRef.current.size <= 3) {
+          setCaptureWarning("");
+        }
         if (capturePressedRef.current.size === 0) {
           if (captureCandidateRef.current.length > 0) {
             const conflict = getConflictingAction(quickKeys, captureAction, captureCandidateRef.current);
@@ -319,6 +332,7 @@ export default function QuickKeyModule({
         Assign 1–3 keys per action. Press keys together when recording.
       </p>
       {storedConflictWarning && <p style={{ margin: "0 0 10px", color: "#8a6d3b" }}>{storedConflictWarning}</p>}
+      {captureWarning && <p style={{ margin: "0 0 10px", color: "#8a6d3b" }}>{captureWarning}</p>}
       {captureError && <p style={{ margin: "0 0 10px", color: "crimson" }}>{captureError}</p>}
       {(Object.keys(quickKeys) as QueueAction[]).map((action) => {
         const isCapturing = captureAction === action;
@@ -334,6 +348,7 @@ export default function QuickKeyModule({
                 captureCandidateRef.current = [];
                 setCapturePreview([]);
                 setCaptureError("");
+                setCaptureWarning("");
                 setCaptureAction(isCapturing ? null : action);
               }}
             >
