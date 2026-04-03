@@ -270,7 +270,7 @@ export default function QuickKeyModule({
       window.removeEventListener("blur", onWindowBlur);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [actionByComboKey, captureAction, disabled, onAction, quickKeys]);
+  }, [actionByComboKey, captureAction, captureEnabled, disabled, onAction, quickKeys]);
 
   return (
     <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12, marginBottom: 12 }}>
