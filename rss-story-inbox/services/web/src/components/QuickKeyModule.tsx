@@ -2,9 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 export type QueueAction = "keep" | "reject" | "undo";
 type QuickKeyConfig = Record<QueueAction, string[]>;
+type StoredQuickKeysRead = {
+  quickKeys: QuickKeyConfig;
+  hadConflicts: boolean;
+};
 
 const STORAGE_KEY = "queue.quickKeys.v1";
 const MODIFIER_KEYS = new Set(["ctrl", "alt", "shift", "meta"]);
+const ACTION_ORDER: QueueAction[] = ["keep", "reject", "undo"];
 
 const DEFAULT_QUICK_KEYS: QuickKeyConfig = {
   keep: ["k"],
@@ -47,29 +52,39 @@ function normalizeCombo(combo: string[]): string[] {
   });
 }
 
-function readStoredQuickKeys(): QuickKeyConfig {
-  if (typeof window === "undefined") return DEFAULT_QUICK_KEYS;
+function sanitizeStoredQuickKeys(parsed: unknown): StoredQuickKeysRead {
+  const parsedConfig = typeof parsed === "object" && parsed !== null ? parsed : {};
+  const quickKeys = {} as QuickKeyConfig;
+  const usedComboKeys = new Set<string>();
+  let hadConflicts = false;
+
+  for (const action of ACTION_ORDER) {
+    const candidate = (parsedConfig as Record<string, unknown>)[action];
+    const normalized = Array.isArray(candidate)
+      ? normalizeCombo(candidate.filter((value): value is string => typeof value === "string")).slice(0, 3)
+      : DEFAULT_QUICK_KEYS[action];
+    const comboKey = normalized.join("+");
+    const isConflict = normalized.length > 0 && usedComboKeys.has(comboKey);
+    quickKeys[action] = isConflict ? [] : normalized;
+    if (isConflict) {
+      hadConflicts = true;
+      continue;
+    }
+    usedComboKeys.add(comboKey);
+  }
+
+  return { quickKeys, hadConflicts };
+}
+
+function readStoredQuickKeys(): StoredQuickKeysRead {
+  if (typeof window === "undefined") return { quickKeys: DEFAULT_QUICK_KEYS, hadConflicts: false };
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_QUICK_KEYS;
+    if (!raw) return { quickKeys: DEFAULT_QUICK_KEYS, hadConflicts: false };
     const parsed = JSON.parse(raw);
-    const keep = Array.isArray(parsed.keep) ? normalizeCombo(parsed.keep).slice(0, 3) : DEFAULT_QUICK_KEYS.keep;
-    const reject = Array.isArray(parsed.reject) ? normalizeCombo(parsed.reject).slice(0, 3) : DEFAULT_QUICK_KEYS.reject;
-    const undoCandidate = Array.isArray(parsed.undo)
-      ? normalizeCombo(parsed.undo).slice(0, 3)
-      : DEFAULT_QUICK_KEYS.undo;
-
-    const usedComboKeys = new Set([keep.join("+"), reject.join("+")]);
-    const undoConflicts = undoCandidate.length > 0 && usedComboKeys.has(undoCandidate.join("+"));
-    const undo = undoConflicts ? [] : undoCandidate;
-
-    return {
-      keep,
-      reject,
-      undo,
-    };
+    return sanitizeStoredQuickKeys(parsed);
   } catch {
-    return DEFAULT_QUICK_KEYS;
+    return { quickKeys: DEFAULT_QUICK_KEYS, hadConflicts: false };
   }
 }
 
@@ -110,6 +125,7 @@ export default function QuickKeyModule({
   const [captureAction, setCaptureAction] = useState<QueueAction | null>(null);
   const [capturePreview, setCapturePreview] = useState<string[]>([]);
   const [captureError, setCaptureError] = useState<string>("");
+  const [storedConflictWarning, setStoredConflictWarning] = useState<string>("");
 
   const pressedRef = useRef<Set<string>>(new Set());
   const capturePressedRef = useRef<Set<string>>(new Set());
@@ -117,7 +133,11 @@ export default function QuickKeyModule({
   const actionLockRef = useRef<boolean>(false);
 
   useEffect(() => {
-    setQuickKeys(readStoredQuickKeys());
+    const { quickKeys: storedQuickKeys, hadConflicts } = readStoredQuickKeys();
+    setQuickKeys(storedQuickKeys);
+    if (hadConflicts) {
+      setStoredConflictWarning("Some conflicting saved shortcuts were unassigned.");
+    }
   }, []);
 
   useEffect(() => {
@@ -283,6 +303,7 @@ export default function QuickKeyModule({
       <p style={{ margin: "8px 0 10px", color: "#555" }}>
         Assign 1–3 keys per action. Press keys together when recording.
       </p>
+      {storedConflictWarning && <p style={{ margin: "0 0 10px", color: "#8a6d3b" }}>{storedConflictWarning}</p>}
       {captureError && <p style={{ margin: "0 0 10px", color: "crimson" }}>{captureError}</p>}
       {(Object.keys(quickKeys) as QueueAction[]).map((action) => {
         const isCapturing = captureAction === action;
