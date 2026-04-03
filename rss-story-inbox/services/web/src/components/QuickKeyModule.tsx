@@ -76,6 +76,23 @@ function sanitizeStoredQuickKeys(parsed: unknown): StoredQuickKeysRead {
   return { quickKeys, hadConflicts };
 }
 
+function sanitizeQuickKeys(next: QuickKeyConfig): QuickKeyConfig {
+  const quickKeys = {} as QuickKeyConfig;
+  const usedComboKeys = new Set<string>();
+
+  for (const action of ACTION_ORDER) {
+    const normalized = normalizeCombo(next[action]).slice(0, 3);
+    const comboKey = normalized.join("+");
+    const isConflict = normalized.length > 0 && usedComboKeys.has(comboKey);
+    quickKeys[action] = isConflict ? [] : normalized;
+    if (!isConflict) {
+      usedComboKeys.add(comboKey);
+    }
+  }
+
+  return quickKeys;
+}
+
 function readStoredQuickKeys(): StoredQuickKeysRead {
   if (typeof window === "undefined") return { quickKeys: DEFAULT_QUICK_KEYS, hadConflicts: false };
   try {
@@ -166,14 +183,18 @@ export default function QuickKeyModule({
     setCaptureAction(null);
   }, [captureEnabled]);
 
+  function setSanitizedQuickKeys(next: QuickKeyConfig | ((prev: QuickKeyConfig) => QuickKeyConfig)) {
+    setQuickKeys((prev) => sanitizeQuickKeys(typeof next === "function" ? next(prev) : next));
+  }
+
   function handleResetDefaults() {
-    setQuickKeys(DEFAULT_QUICK_KEYS);
+    setSanitizedQuickKeys(DEFAULT_QUICK_KEYS);
     setCaptureError("");
     setCaptureWarning("");
   }
 
   function handleClearAction(action: QueueAction) {
-    setQuickKeys((prev) => ({
+    setSanitizedQuickKeys((prev) => ({
       ...prev,
       [action]: [],
     }));
@@ -277,7 +298,7 @@ export default function QuickKeyModule({
                 `Cannot assign ${comboToLabel(captureCandidateRef.current)} to ${captureAction}: already used by ${conflict}.`
               );
             } else {
-              setQuickKeys((prev) => ({
+              setSanitizedQuickKeys((prev) => ({
                 ...prev,
                 [captureAction]: captureCandidateRef.current,
               }));
