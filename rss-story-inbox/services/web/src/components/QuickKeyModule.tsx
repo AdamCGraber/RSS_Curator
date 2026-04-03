@@ -169,6 +169,21 @@ export default function QuickKeyModule({
     setCaptureError("");
   }
 
+  function handleClearAction(action: QueueAction) {
+    setQuickKeys((prev) => ({
+      ...prev,
+      [action]: [],
+    }));
+    setCaptureError("");
+
+    if (captureAction === action) {
+      capturePressedRef.current.clear();
+      captureCandidateRef.current = [];
+      setCapturePreview([]);
+      setCaptureAction(null);
+    }
+  }
+
   const actionByComboKey = useMemo(() => {
     const map = new Map<string, QueueAction>();
     (Object.keys(quickKeys) as QueueAction[]).forEach((action) => {
@@ -323,6 +338,13 @@ export default function QuickKeyModule({
               }}
             >
               {isCapturing ? "Cancel" : "Set"}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleClearAction(action)}
+              disabled={quickKeys[action].length === 0}
+            >
+              Clear
             </button>
           </div>
         );
