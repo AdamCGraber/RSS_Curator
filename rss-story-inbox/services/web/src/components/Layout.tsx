@@ -31,12 +31,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         }
 
         const lastRunningJobId = window.sessionStorage.getItem(LAST_RUNNING_JOB_STORAGE_KEY);
-        if (!lastRunningJobId) return;
-
-        const latestById = (await apiGet(`/admin/ingest/status/${lastRunningJobId}`)) as IngestionJob;
-        if (!mounted || latestById.status !== "COMPLETED") {
-          return;
-        }
+        const latestById = lastRunningJobId
+          ? ((await apiGet(`/admin/ingest/status/${lastRunningJobId}`)) as IngestionJob)
+          : ((await apiGet("/admin/ingest/status/latest")) as IngestionJob | null);
+        if (!mounted || !latestById || latestById.status !== "COMPLETED") return;
 
         const dismissedJobId = window.sessionStorage.getItem(DISMISSED_JOB_STORAGE_KEY);
         if (dismissedJobId === latestById.job_id) {
