@@ -35,7 +35,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         const latestById = lastRunningJobId
           ? ((await apiGet(`/admin/ingest/status/${lastRunningJobId}`)) as IngestionJob)
           : ((await apiGet("/admin/ingest/status/latest")) as IngestionJob | null);
-        if (!mounted || !latestById || latestById.status !== "COMPLETED") return;
+        if (!mounted) return;
+        if (!latestById || latestById.status !== "COMPLETED") {
+          setCompletedJobId(null);
+          return;
+        }
 
         const dismissedJobId = window.sessionStorage.getItem(DISMISSED_JOB_STORAGE_KEY);
         if (dismissedJobId === latestById.job_id) {
