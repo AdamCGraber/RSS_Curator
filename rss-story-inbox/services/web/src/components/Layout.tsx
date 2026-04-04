@@ -27,6 +27,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
         if (latestRunning?.status === "RUNNING") {
           window.sessionStorage.setItem(LAST_RUNNING_JOB_STORAGE_KEY, latestRunning.job_id);
+          setCompletedJobId(null);
           return;
         }
 
