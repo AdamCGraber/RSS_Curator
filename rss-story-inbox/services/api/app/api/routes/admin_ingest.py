@@ -128,6 +128,10 @@ def _get_running_job(db: Session) -> IngestionJob | None:
     )
 
 
+def _get_latest_job(db: Session) -> IngestionJob | None:
+    return db.query(IngestionJob).order_by(IngestionJob.started_at.desc()).first()
+
+
 def _is_worker_alive_via_advisory_lock() -> bool:
     if engine.dialect.name != "postgresql":
         return False
@@ -477,6 +481,24 @@ def ingest_status_current(db: Session = Depends(get_db)):
     job = _recover_if_stale_running_job(db, job)
     if not job:
         return None
+    return _as_status(job)
+
+
+@router.get("/admin/ingest/status/latest", response_model=IngestionJobStatus | None)
+def ingest_status_latest(db: Session = Depends(get_db)):
+    job = _get_latest_job(db)
+    if not job:
+        return None
+
+    if job.status == "RUNNING":
+        recovered_job = _recover_if_stale_running_job(db, job)
+        if recovered_job is None:
+            job = _get_latest_job(db)
+            if not job:
+                return None
+        else:
+            job = recovered_job
+
     return _as_status(job)
 
 
