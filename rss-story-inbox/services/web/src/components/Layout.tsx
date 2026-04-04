@@ -32,21 +32,38 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         }
 
         const lastRunningJobId = window.sessionStorage.getItem(LAST_RUNNING_JOB_STORAGE_KEY);
-        const latestById = lastRunningJobId
-          ? ((await apiGet(`/admin/ingest/status/${lastRunningJobId}`)) as IngestionJob)
-          : ((await apiGet("/admin/ingest/status/latest")) as IngestionJob | null);
+        let latestById: IngestionJob | null = null;
+        if (lastRunningJobId) {
+          try {
+            latestById = (await apiGet(`/admin/ingest/status/${lastRunningJobId}`)) as IngestionJob;
+          } catch {
+            latestById = null;
+          }
+        }
+
+        let candidateStatus = latestById;
+        if (!candidateStatus || candidateStatus.status !== "COMPLETED") {
+          candidateStatus = (await apiGet("/admin/ingest/status/latest")) as IngestionJob | null;
+        }
+
+        if (candidateStatus?.status === "RUNNING") {
+          window.sessionStorage.setItem(LAST_RUNNING_JOB_STORAGE_KEY, candidateStatus.job_id);
+          setCompletedJobId(null);
+          return;
+        }
+
         if (!mounted) return;
-        if (!latestById || latestById.status !== "COMPLETED") {
+        if (!candidateStatus || candidateStatus.status !== "COMPLETED") {
           setCompletedJobId(null);
           return;
         }
 
         const dismissedJobId = window.sessionStorage.getItem(DISMISSED_JOB_STORAGE_KEY);
-        if (dismissedJobId === latestById.job_id) {
+        if (dismissedJobId === candidateStatus.job_id) {
           return;
         }
 
-        setCompletedJobId(latestById.job_id);
+        setCompletedJobId(candidateStatus.job_id);
       } catch {
         // no-op: this endpoint is best effort
       }
