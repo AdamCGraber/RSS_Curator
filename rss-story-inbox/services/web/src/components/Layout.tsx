@@ -22,25 +22,28 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
     const syncIngestionStatus = async () => {
       try {
-        const latest = (await apiGet("/admin/ingest/status/current")) as IngestionJob | null;
-        if (!mounted || !latest) return;
+        const latestRunning = (await apiGet("/admin/ingest/status/current")) as IngestionJob | null;
+        if (!mounted) return;
 
-        if (latest.status === "RUNNING") {
-          window.sessionStorage.setItem(LAST_RUNNING_JOB_STORAGE_KEY, latest.job_id);
+        if (latestRunning?.status === "RUNNING") {
+          window.sessionStorage.setItem(LAST_RUNNING_JOB_STORAGE_KEY, latestRunning.job_id);
           return;
         }
 
-        if (latest.status !== "COMPLETED") {
+        const lastRunningJobId = window.sessionStorage.getItem(LAST_RUNNING_JOB_STORAGE_KEY);
+        if (!lastRunningJobId) return;
+
+        const latestById = (await apiGet(`/admin/ingest/status/${lastRunningJobId}`)) as IngestionJob;
+        if (!mounted || latestById.status !== "COMPLETED") {
           return;
         }
 
         const dismissedJobId = window.sessionStorage.getItem(DISMISSED_JOB_STORAGE_KEY);
-        const lastRunningJobId = window.sessionStorage.getItem(LAST_RUNNING_JOB_STORAGE_KEY);
-        if (dismissedJobId === latest.job_id || lastRunningJobId !== latest.job_id) {
+        if (dismissedJobId === latestById.job_id) {
           return;
         }
 
-        setCompletedJobId(latest.job_id);
+        setCompletedJobId(latestById.job_id);
       } catch {
         // no-op: this endpoint is best effort
       }
