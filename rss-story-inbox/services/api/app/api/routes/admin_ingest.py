@@ -72,7 +72,25 @@ PHASE_3_MAX_PROGRESS = 95
 PHASE_4_MAX_PROGRESS = 99
 
 
+def _max_supported_window_days() -> int:
+    utc_today = datetime.now(timezone.utc).date()
+    end_date = utc_today - timedelta(days=1)
+    return (end_date - date.min).days + 1
+
+
+def _validate_window_days(window_days: int):
+    max_days = _max_supported_window_days()
+    if window_days < 1:
+        raise HTTPException(status_code=422, detail="cluster_time_window_days must be at least 1.")
+    if window_days > max_days:
+        raise HTTPException(
+            status_code=422,
+            detail=f"cluster_time_window_days must be <= {max_days}.",
+        )
+
+
 def _default_date_range(window_days: int) -> tuple[date, date]:
+    _validate_window_days(window_days)
     utc_today = datetime.now(timezone.utc).date()
     end_date = utc_today - timedelta(days=1)
     start_date = end_date - timedelta(days=max(1, window_days) - 1)
@@ -91,6 +109,7 @@ def _normalize_range_to_utc_bounds(start_date: date, end_date: date) -> tuple[da
 
 
 def _rolling_window_bounds(window_days: int) -> tuple[datetime, datetime]:
+    _validate_window_days(window_days)
     end_datetime = datetime.now(timezone.utc)
     start_datetime = end_datetime - timedelta(days=max(1, window_days))
     return start_datetime, end_datetime
