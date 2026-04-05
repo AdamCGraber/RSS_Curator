@@ -549,28 +549,11 @@ def ingest(payload: IngestRequest | None = None, db: Session = Depends(get_db)):
         runtime_window_days = payload.cluster_time_window_days
         rolling_window_days = payload.cluster_time_window_days
     else:
-        # No explicit payload: preserve rolling defaults for legacy automations,
-        # but honor a user-customized persisted explicit range.
-        derived_start, derived_end = _default_date_range(prefs.cluster_time_window_days)
-        has_persisted_range = (
-            prefs.cluster_time_window_start is not None and prefs.cluster_time_window_end is not None
-        )
-        persisted_matches_derived_default = (
-            has_persisted_range
-            and prefs.cluster_time_window_start == derived_start
-            and prefs.cluster_time_window_end == derived_end
-        )
-
-        if has_persisted_range and not persisted_matches_derived_default:
-            start_date, end_date = prefs.cluster_time_window_start, prefs.cluster_time_window_end
-            _validate_date_range(start_date, end_date)
-            start_datetime, end_datetime = _normalize_range_to_utc_bounds(start_date, end_date)
-            runtime_window_days = _window_days_from_range(start_date, end_date)
-        else:
-            start_datetime, end_datetime = _rolling_window_bounds(prefs.cluster_time_window_days)
-            start_date, end_date = derived_start, derived_end
-            runtime_window_days = prefs.cluster_time_window_days
-            rolling_window_days = prefs.cluster_time_window_days
+        # No explicit payload (scheduler/legacy callers): always use rolling runtime semantics.
+        start_datetime, end_datetime = _rolling_window_bounds(prefs.cluster_time_window_days)
+        start_date, end_date = _default_date_range(prefs.cluster_time_window_days)
+        runtime_window_days = prefs.cluster_time_window_days
+        rolling_window_days = prefs.cluster_time_window_days
 
     prefs.cluster_time_window_start = start_date
     prefs.cluster_time_window_end = end_date
