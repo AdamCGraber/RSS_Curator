@@ -43,14 +43,14 @@ class IngestionJobStartResponse(BaseModel):
 
 class IngestSettings(BaseModel):
     cluster_similarity_threshold: float = Field(0.88, ge=0.0, le=1.0)
-    cluster_time_window_days: int = Field(2, ge=1, le=30)
+    cluster_time_window_days: int = Field(2, ge=1)
     start_date: date
     end_date: date
 
 
 class IngestRequest(BaseModel):
     cluster_similarity_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
-    cluster_time_window_days: int | None = Field(default=None, ge=1, le=30)
+    cluster_time_window_days: int | None = Field(default=None, ge=1)
     start_date: date | None = None
     end_date: date | None = None
 
