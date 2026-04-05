@@ -90,6 +90,12 @@ def _normalize_range_to_utc_bounds(start_date: date, end_date: date) -> tuple[da
     return start_datetime, end_datetime
 
 
+def _rolling_window_bounds(window_days: int) -> tuple[datetime, datetime]:
+    end_datetime = datetime.now(timezone.utc)
+    start_datetime = end_datetime - timedelta(days=max(1, window_days))
+    return start_datetime, end_datetime
+
+
 def _validate_date_range(start_date: date, end_date: date):
     utc_today = datetime.now(timezone.utc).date()
     if start_date >= utc_today or end_date >= utc_today:
@@ -497,18 +503,22 @@ def ingest(payload: IngestRequest | None = None, db: Session = Depends(get_db)):
             raise HTTPException(status_code=422, detail="Both start_date and end_date are required.")
         _validate_date_range(payload.start_date, payload.end_date)
         start_date, end_date = payload.start_date, payload.end_date
+        start_datetime, end_datetime = _normalize_range_to_utc_bounds(start_date, end_date)
     elif payload and payload.cluster_time_window_days is not None:
+        # Backward-compatible semantics for legacy day-based callers:
+        # preserve rolling "last N days up to now" clustering bounds.
+        start_datetime, end_datetime = _rolling_window_bounds(payload.cluster_time_window_days)
+        # Persist a date range for settings UI/API without changing the rolling runtime behavior.
         start_date, end_date = _default_date_range(payload.cluster_time_window_days)
     else:
         start_date, end_date = prefs.cluster_time_window_start, prefs.cluster_time_window_end
         _validate_date_range(start_date, end_date)
+        start_datetime, end_datetime = _normalize_range_to_utc_bounds(start_date, end_date)
 
     prefs.cluster_time_window_start = start_date
     prefs.cluster_time_window_end = end_date
     prefs.cluster_time_window_days = _window_days_from_range(start_date, end_date)
     db.commit()
-
-    start_datetime, end_datetime = _normalize_range_to_utc_bounds(start_date, end_date)
 
     with _ingest_lock:
         running_job = _get_running_job(db)
