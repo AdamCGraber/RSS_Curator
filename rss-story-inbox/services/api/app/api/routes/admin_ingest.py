@@ -50,7 +50,7 @@ class IngestSettings(BaseModel):
 
 class IngestRequest(BaseModel):
     cluster_similarity_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
-    cluster_time_window_days: int | None = Field(default=None, ge=1)
+    cluster_time_window_days: int | None = Field(default=None, ge=1, le=30)
     start_date: date | None = None
     end_date: date | None = None
 
