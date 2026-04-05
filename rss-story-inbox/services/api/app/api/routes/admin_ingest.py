@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from threading import Lock, Thread
 from uuid import UUID, uuid4
 
@@ -44,11 +44,15 @@ class IngestionJobStartResponse(BaseModel):
 class IngestSettings(BaseModel):
     cluster_similarity_threshold: float = Field(0.88, ge=0.0, le=1.0)
     cluster_time_window_days: int = Field(2, ge=1, le=30)
+    start_date: date
+    end_date: date
 
 
 class IngestRequest(BaseModel):
     cluster_similarity_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
     cluster_time_window_days: int | None = Field(default=None, ge=1, le=30)
+    start_date: date | None = None
+    end_date: date | None = None
 
 
 _ingest_lock = Lock()
@@ -68,8 +72,35 @@ PHASE_3_MAX_PROGRESS = 95
 PHASE_4_MAX_PROGRESS = 99
 
 
+def _default_date_range(window_days: int) -> tuple[date, date]:
+    utc_today = datetime.now(timezone.utc).date()
+    end_date = utc_today - timedelta(days=1)
+    start_date = end_date - timedelta(days=max(1, window_days) - 1)
+    return start_date, end_date
+
+
+def _window_days_from_range(start_date: date, end_date: date) -> int:
+    return max(1, (end_date - start_date).days + 1)
+
+
+def _normalize_range_to_utc_bounds(start_date: date, end_date: date) -> tuple[datetime, datetime]:
+    # Date semantics are inclusive on both ends: [start_date 00:00:00, end_date 23:59:59.999999].
+    start_datetime = datetime.combine(start_date, time.min, tzinfo=timezone.utc)
+    end_datetime = datetime.combine(end_date, time.max, tzinfo=timezone.utc)
+    return start_datetime, end_datetime
+
+
+def _validate_date_range(start_date: date, end_date: date):
+    utc_today = datetime.now(timezone.utc).date()
+    if start_date >= utc_today or end_date >= utc_today:
+        raise HTTPException(status_code=422, detail="start_date and end_date must both be in the past (before today UTC).")
+    if start_date > end_date:
+        raise HTTPException(status_code=422, detail="end_date must be on or after start_date.")
+
+
 def ensure_preferences(db: Session) -> UserPreference:
     default_window_days = max(1, int(settings.cluster_time_window_hours / 24) or 2)
+    default_start_date, default_end_date = _default_date_range(default_window_days)
 
     stmt = (
         insert(UserPreference)
@@ -77,6 +108,8 @@ def ensure_preferences(db: Session) -> UserPreference:
             user_id=1,
             cluster_similarity_threshold=0.88,
             cluster_time_window_days=default_window_days,
+            cluster_time_window_start=default_start_date,
+            cluster_time_window_end=default_end_date,
         )
         .on_conflict_do_nothing(index_elements=["user_id"])
     )
@@ -86,6 +119,14 @@ def ensure_preferences(db: Session) -> UserPreference:
     prefs = db.query(UserPreference).filter(UserPreference.user_id == 1).first()
     if not prefs:
         raise HTTPException(status_code=500, detail="Failed to initialize ingest preferences")
+
+    if prefs.cluster_time_window_start is None or prefs.cluster_time_window_end is None:
+        derived_start, derived_end = _default_date_range(prefs.cluster_time_window_days)
+        prefs.cluster_time_window_start = derived_start
+        prefs.cluster_time_window_end = derived_end
+        db.commit()
+        db.refresh(prefs)
+
     return prefs
 
 
@@ -289,7 +330,7 @@ def _mark_job_complete(db: Session, job: IngestionJob, imported_items_count: int
     db.commit()
 
 
-def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
+def run_ingestion_job(job_id: UUID, threshold: float, start_datetime: datetime, end_datetime: datetime):
     db = SessionLocal()
     lock_conn = None
     try:
@@ -389,7 +430,12 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
         )
 
         _set_phase_progress(db, job, phase=INGESTION_PHASES[2], progress_percent=PHASE_2_MAX_PROGRESS)
-        cluster_recent(db, threshold=threshold, time_window_days=window_days)
+        cluster_recent(
+            db,
+            threshold=threshold,
+            start_datetime=start_datetime,
+            end_datetime=end_datetime,
+        )
         cluster_count = _count_distinct_clusters_for_urls(db, run_urls)
         _set_phase_progress(
             db,
@@ -427,21 +473,42 @@ def run_ingestion_job(job_id: UUID, threshold: float, window_days: int):
 @router.get("/admin/ingest/settings", response_model=IngestSettings)
 def ingest_settings(db: Session = Depends(get_db)):
     prefs = ensure_preferences(db)
+    _validate_date_range(prefs.cluster_time_window_start, prefs.cluster_time_window_end)
     return IngestSettings(
         cluster_similarity_threshold=prefs.cluster_similarity_threshold,
         cluster_time_window_days=prefs.cluster_time_window_days,
+        start_date=prefs.cluster_time_window_start,
+        end_date=prefs.cluster_time_window_end,
     )
 
 
 @router.post("/admin/ingest", response_model=IngestionJobStartResponse)
 def ingest(payload: IngestRequest | None = None, db: Session = Depends(get_db)):
     prefs = ensure_preferences(db)
-    threshold = payload.cluster_similarity_threshold if payload and payload.cluster_similarity_threshold is not None else prefs.cluster_similarity_threshold
-    window_days = payload.cluster_time_window_days if payload and payload.cluster_time_window_days is not None else prefs.cluster_time_window_days
+    threshold = (
+        payload.cluster_similarity_threshold
+        if payload and payload.cluster_similarity_threshold is not None
+        else prefs.cluster_similarity_threshold
+    )
 
     prefs.cluster_similarity_threshold = threshold
-    prefs.cluster_time_window_days = window_days
+    if payload and (payload.start_date is not None or payload.end_date is not None):
+        if payload.start_date is None or payload.end_date is None:
+            raise HTTPException(status_code=422, detail="Both start_date and end_date are required.")
+        _validate_date_range(payload.start_date, payload.end_date)
+        start_date, end_date = payload.start_date, payload.end_date
+    elif payload and payload.cluster_time_window_days is not None:
+        start_date, end_date = _default_date_range(payload.cluster_time_window_days)
+    else:
+        start_date, end_date = prefs.cluster_time_window_start, prefs.cluster_time_window_end
+        _validate_date_range(start_date, end_date)
+
+    prefs.cluster_time_window_start = start_date
+    prefs.cluster_time_window_end = end_date
+    prefs.cluster_time_window_days = _window_days_from_range(start_date, end_date)
     db.commit()
+
+    start_datetime, end_datetime = _normalize_range_to_utc_bounds(start_date, end_date)
 
     with _ingest_lock:
         running_job = _get_running_job(db)
@@ -463,7 +530,11 @@ def ingest(payload: IngestRequest | None = None, db: Session = Depends(get_db)):
         db.add(job)
         db.commit()
     try:
-        Thread(target=run_ingestion_job, args=(job.id, threshold, window_days), daemon=True).start()
+        Thread(
+            target=run_ingestion_job,
+            args=(job.id, threshold, start_datetime, end_datetime),
+            daemon=True,
+        ).start()
     except Exception as exc:
         failed_job = db.get(IngestionJob, job.id)
         if failed_job:
