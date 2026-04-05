@@ -45,10 +45,15 @@ def cluster_recent(
     threshold: float = 0.88,
     start_datetime: datetime | None = None,
     end_datetime: datetime | None = None,
+    window_days: int | None = None,
 ) -> None:
     if start_datetime is None or end_datetime is None:
         raise ValueError("start_datetime and end_datetime are required")
-    time_window_days = max(1, (end_datetime.date() - start_datetime.date()).days + 1)
+    time_window_days = (
+        max(1, window_days)
+        if window_days is not None
+        else max(1, (end_datetime.date() - start_datetime.date()).days + 1)
+    )
 
     articles = (
         db.query(Article)

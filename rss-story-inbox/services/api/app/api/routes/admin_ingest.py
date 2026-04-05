@@ -355,7 +355,13 @@ def _mark_job_complete(db: Session, job: IngestionJob, imported_items_count: int
     db.commit()
 
 
-def run_ingestion_job(job_id: UUID, threshold: float, start_datetime: datetime, end_datetime: datetime):
+def run_ingestion_job(
+    job_id: UUID,
+    threshold: float,
+    start_datetime: datetime,
+    end_datetime: datetime,
+    window_days: int,
+):
     db = SessionLocal()
     lock_conn = None
     try:
@@ -460,6 +466,7 @@ def run_ingestion_job(job_id: UUID, threshold: float, start_datetime: datetime, 
             threshold=threshold,
             start_datetime=start_datetime,
             end_datetime=end_datetime,
+            window_days=window_days,
         )
         cluster_count = _count_distinct_clusters_for_urls(db, run_urls)
         _set_phase_progress(
@@ -523,12 +530,14 @@ def ingest(payload: IngestRequest | None = None, db: Session = Depends(get_db)):
         _validate_date_range(payload.start_date, payload.end_date)
         start_date, end_date = payload.start_date, payload.end_date
         start_datetime, end_datetime = _normalize_range_to_utc_bounds(start_date, end_date)
+        runtime_window_days = _window_days_from_range(start_date, end_date)
     elif payload and payload.cluster_time_window_days is not None:
         # Backward-compatible semantics for legacy day-based callers:
         # preserve rolling "last N days up to now" clustering bounds.
         start_datetime, end_datetime = _rolling_window_bounds(payload.cluster_time_window_days)
         # Persist a date range for settings UI/API without changing the rolling runtime behavior.
         start_date, end_date = _default_date_range(payload.cluster_time_window_days)
+        runtime_window_days = payload.cluster_time_window_days
     else:
         # No explicit payload: preserve rolling defaults for legacy automations,
         # but honor a user-customized persisted explicit range.
@@ -546,9 +555,11 @@ def ingest(payload: IngestRequest | None = None, db: Session = Depends(get_db)):
             start_date, end_date = prefs.cluster_time_window_start, prefs.cluster_time_window_end
             _validate_date_range(start_date, end_date)
             start_datetime, end_datetime = _normalize_range_to_utc_bounds(start_date, end_date)
+            runtime_window_days = _window_days_from_range(start_date, end_date)
         else:
             start_datetime, end_datetime = _rolling_window_bounds(prefs.cluster_time_window_days)
             start_date, end_date = derived_start, derived_end
+            runtime_window_days = prefs.cluster_time_window_days
 
     prefs.cluster_time_window_start = start_date
     prefs.cluster_time_window_end = end_date
@@ -577,7 +588,7 @@ def ingest(payload: IngestRequest | None = None, db: Session = Depends(get_db)):
     try:
         Thread(
             target=run_ingestion_job,
-            args=(job.id, threshold, start_datetime, end_datetime),
+            args=(job.id, threshold, start_datetime, end_datetime, runtime_window_days),
             daemon=True,
         ).start()
     except Exception as exc:
