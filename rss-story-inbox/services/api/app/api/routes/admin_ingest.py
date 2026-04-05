@@ -550,15 +550,18 @@ def ingest(payload: IngestRequest | None = None, db: Session = Depends(get_db)):
         runtime_window_days = payload.cluster_time_window_days
         rolling_window_days = payload.cluster_time_window_days
     else:
-        # No explicit payload (scheduler/legacy callers): always use rolling runtime semantics.
-        start_datetime, end_datetime = _rolling_window_bounds(prefs.cluster_time_window_days)
+        # No explicit payload: honor persisted range when available.
         if prefs.cluster_time_window_start is not None and prefs.cluster_time_window_end is not None:
             start_date, end_date = prefs.cluster_time_window_start, prefs.cluster_time_window_end
+            _validate_date_range(start_date, end_date)
+            start_datetime, end_datetime = _normalize_range_to_utc_bounds(start_date, end_date)
+            runtime_window_days = _window_days_from_range(start_date, end_date)
             should_persist_window = False
         else:
+            start_datetime, end_datetime = _rolling_window_bounds(prefs.cluster_time_window_days)
             start_date, end_date = _default_date_range(prefs.cluster_time_window_days)
-        runtime_window_days = prefs.cluster_time_window_days
-        rolling_window_days = prefs.cluster_time_window_days
+            runtime_window_days = prefs.cluster_time_window_days
+            rolling_window_days = prefs.cluster_time_window_days
 
     if should_persist_window:
         prefs.cluster_time_window_start = start_date
