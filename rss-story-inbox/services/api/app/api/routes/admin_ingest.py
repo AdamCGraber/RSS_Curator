@@ -533,6 +533,7 @@ def ingest(payload: IngestRequest | None = None, db: Session = Depends(get_db)):
 
     prefs.cluster_similarity_threshold = threshold
     rolling_window_days: int | None = None
+    should_persist_window = True
     if payload and (payload.start_date is not None or payload.end_date is not None):
         if payload.start_date is None or payload.end_date is None:
             raise HTTPException(status_code=422, detail="Both start_date and end_date are required.")
@@ -551,13 +552,18 @@ def ingest(payload: IngestRequest | None = None, db: Session = Depends(get_db)):
     else:
         # No explicit payload (scheduler/legacy callers): always use rolling runtime semantics.
         start_datetime, end_datetime = _rolling_window_bounds(prefs.cluster_time_window_days)
-        start_date, end_date = _default_date_range(prefs.cluster_time_window_days)
+        if prefs.cluster_time_window_start is not None and prefs.cluster_time_window_end is not None:
+            start_date, end_date = prefs.cluster_time_window_start, prefs.cluster_time_window_end
+            should_persist_window = False
+        else:
+            start_date, end_date = _default_date_range(prefs.cluster_time_window_days)
         runtime_window_days = prefs.cluster_time_window_days
         rolling_window_days = prefs.cluster_time_window_days
 
-    prefs.cluster_time_window_start = start_date
-    prefs.cluster_time_window_end = end_date
-    prefs.cluster_time_window_days = _window_days_from_range(start_date, end_date)
+    if should_persist_window:
+        prefs.cluster_time_window_start = start_date
+        prefs.cluster_time_window_end = end_date
+        prefs.cluster_time_window_days = _window_days_from_range(start_date, end_date)
     db.commit()
 
     with _ingest_lock:
