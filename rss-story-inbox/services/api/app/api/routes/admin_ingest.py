@@ -128,7 +128,10 @@ def _resolve_window_dates(
         pref_end = prefs.cluster_time_window_end
         if pref_start is None or pref_end is None:
             default_end = datetime.now(timezone.utc).date()
-            default_window_days = max(1, int(settings.cluster_time_window_hours / 24) or 2)
+            if prefs.cluster_time_window_days and prefs.cluster_time_window_days > 0:
+                default_window_days = int(prefs.cluster_time_window_days)
+            else:
+                default_window_days = max(1, int(settings.cluster_time_window_hours / 24) or 2)
             default_start = default_end - timedelta(days=default_window_days - 1)
             start_date_value = default_start
             end_date_value = default_end
