@@ -40,12 +40,26 @@ def _pick_canonical(members: list[Article]) -> Article:
     return best or members[0]
 
 
-def cluster_recent(db: Session, threshold: float = 0.88, time_window_days: int = 2) -> None:
-    cutoff = datetime.now(timezone.utc) - timedelta(days=time_window_days)
+def cluster_recent(
+    db: Session,
+    threshold: float = 0.88,
+    start_datetime: datetime | None = None,
+    end_datetime: datetime | None = None,
+) -> None:
+    if start_datetime is None or end_datetime is None:
+        end_datetime = datetime.now(timezone.utc)
+        start_datetime = end_datetime - timedelta(days=2)
+
+    if start_datetime.tzinfo is None:
+        start_datetime = start_datetime.replace(tzinfo=timezone.utc)
+    if end_datetime.tzinfo is None:
+        end_datetime = end_datetime.replace(tzinfo=timezone.utc)
+
     articles = (
         db.query(Article)
         .filter(Article.published_at.isnot(None))
-        .filter(Article.published_at >= cutoff)
+        .filter(Article.published_at >= start_datetime)
+        .filter(Article.published_at <= end_datetime)
         .order_by(Article.published_at.desc())
         .all()
     )
@@ -73,7 +87,8 @@ def cluster_recent(db: Session, threshold: float = 0.88, time_window_days: int =
             c = Cluster(
                 cluster_title=a.title,
                 created_with_threshold=threshold,
-                created_with_time_window_days=time_window_days,
+                created_with_time_window_start=start_datetime,
+                created_with_time_window_end=end_datetime,
             )
             db.add(c)
             db.flush()
@@ -96,7 +111,8 @@ def cluster_recent(db: Session, threshold: float = 0.88, time_window_days: int =
         c.cluster_title = canonical.title
         c.canonical_article_id = canonical.id
         c.created_with_threshold = threshold
-        c.created_with_time_window_days = time_window_days
+        c.created_with_time_window_start = start_datetime
+        c.created_with_time_window_end = end_datetime
         c.coverage_count = len(sources)
         c.latest_published_at = latest
         c.score = avg_similarity
