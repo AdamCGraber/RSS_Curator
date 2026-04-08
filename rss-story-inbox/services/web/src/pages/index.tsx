@@ -42,7 +42,8 @@ export default function QueuePage() {
   const [err, setErr] = useState<string>("");
   const [notice, setNotice] = useState<string>("");
   const [thresholdPct, setThresholdPct] = useState<number>(88);
-  const [timeWindowDays, setTimeWindowDays] = useState<number>(2);
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
   const [ingestionJob, setIngestionJob] = useState<IngestionJob | null>(null);
   const [ingestionModalOpen, setIngestionModalOpen] = useState<boolean>(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState<boolean>(false);
@@ -94,6 +95,10 @@ export default function QueuePage() {
       // ignore JSON parse errors
     }
     return message;
+  }
+
+  function utcDateString(value: Date = new Date()) {
+    return value.toISOString().slice(0, 10);
   }
 
   async function handleTerminalIngestionStatus(status: IngestionJob) {
@@ -150,9 +155,13 @@ export default function QueuePage() {
     try {
       const settings = await apiGet("/admin/ingest/settings");
       setThresholdPct(Math.round((settings.cluster_similarity_threshold ?? 0.88) * 100));
-      setTimeWindowDays(settings.cluster_time_window_days ?? 2);
+      setStartDate(settings.start_date ?? "");
+      setEndDate(settings.end_date ?? "");
     } catch {
       // ignore and use defaults
+      const today = utcDateString();
+      setStartDate(today);
+      setEndDate(today);
     }
   }
 
@@ -246,11 +255,26 @@ export default function QueuePage() {
     setNotice("");
     setIngestionModalOpen(true);
 
+    if (!startDate || !endDate) {
+      setErr("Start date and end date are required.");
+      return;
+    }
+    if (startDate > endDate) {
+      setErr("End date must be on or after start date.");
+      return;
+    }
+    const today = utcDateString();
+    if (startDate > today || endDate > today) {
+      setErr("Start date and end date must be in the past.");
+      return;
+    }
+
     let jobStart: IngestionJobStartResponse;
     try {
       jobStart = await apiPost("/admin/ingest", {
         cluster_similarity_threshold: thresholdPct / 100,
-        cluster_time_window_days: timeWindowDays,
+        start_date: startDate,
+        end_date: endDate,
       });
     } catch (e: any) {
       const message = parseError(e);
@@ -301,6 +325,12 @@ export default function QueuePage() {
   function handleCopyErrorDetails() {
     navigator.clipboard?.writeText(JSON.stringify(ingestionJob, null, 2));
   }
+
+  useEffect(() => {
+    const today = utcDateString();
+    if (!startDate) setStartDate(today);
+    if (!endDate) setEndDate(today);
+  }, [startDate, endDate]);
 
   useEffect(() => {
     void (async () => {
@@ -565,20 +595,32 @@ export default function QueuePage() {
               Higher values create fewer, tighter clusters. Lower values group more loosely related stories.
             </p>
 
-            <label htmlFor="window-days">
-              <b>Story time window (days)</b>
+            <label htmlFor="window-start">
+              <b>Start date</b>
             </label>
             <input
-              id="window-days"
-              type="number"
-              min={1}
-              max={30}
-              value={timeWindowDays}
-              onChange={(e) => setTimeWindowDays(Number(e.target.value))}
-              style={{ marginLeft: 8, width: 80 }}
+              id="window-start"
+              type="date"
+              value={startDate}
+              max={utcDateString()}
+              onChange={(e) => setStartDate(e.target.value)}
+              style={{ marginLeft: 8 }}
+            />
+            <label htmlFor="window-end" style={{ marginLeft: 12 }}>
+              <b>End date</b>
+            </label>
+            <input
+              id="window-end"
+              type="date"
+              value={endDate}
+              min={startDate || undefined}
+              max={utcDateString()}
+              onChange={(e) => setEndDate(e.target.value)}
+              style={{ marginLeft: 8 }}
             />
             <p style={{ marginTop: 4, color: "#555" }}>
-              Only articles published within this window will be compared as the same story.
+              Stories are clustered for articles where published_at is between start (00:00:00 UTC) and end
+              (23:59:59.999999 UTC), inclusive.
             </p>
           </div>
 
